@@ -68,6 +68,7 @@ export type Ride = {
   code: string;
   origin: string;
   destination: string;
+  distance_km: number;
   departure_at: When;
   expected_arrival_at: When;
   pickup_point: string;

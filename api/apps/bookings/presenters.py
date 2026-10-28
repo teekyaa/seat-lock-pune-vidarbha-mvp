@@ -53,6 +53,7 @@ def ride_json(ride, viewer=None, *, detail=False):
         "code": ride.code,
         "origin": ride.city_pair.origin,
         "destination": ride.city_pair.destination,
+        "distance_km": ride.city_pair.distance_km,
         "departure_at": _dt(ride.departure_at),
         "expected_arrival_at": _dt(ride.expected_arrival_at),
         "pickup_point": ride.pickup_point,

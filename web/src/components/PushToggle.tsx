@@ -9,11 +9,17 @@ function urlBase64ToUint8Array(base64: string) {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
+type State = "loading" | "unsupported" | "ios-install" | "off" | "on" | "blocked" | "unconfigured";
+
 export function PushToggle() {
-  const [state, setState] = useState<"unsupported" | "off" | "on" | "blocked" | "unconfigured">("off");
+  const [state, setState] = useState<State>("loading");
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone;
+    // iOS only allows web push for apps added to the Home Screen (iOS 16.4 and later).
+    if (ios && !standalone) return setState("ios-install");
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return setState("unsupported");
     if (Notification.permission === "denied") return setState("blocked");
     navigator.serviceWorker.ready.then(async (reg) => setState((await reg.pushManager.getSubscription()) ? "on" : "off"));
@@ -43,19 +49,21 @@ export function PushToggle() {
     setState("off");
   }
 
-  const text = {
-    unsupported: "This browser can't show reminders. Add an email above instead, or install Seat Lock to your home screen.",
-    blocked: "Notifications are blocked for this site in your browser settings.",
-    unconfigured: "Phone reminders are not switched on for this server yet.",
+  const text: Record<State, string> = {
+    loading: "",
+    "ios-install": "On iPhone, add Seat Lock to your Home Screen first: tap Share, then Add to Home Screen. Open it from there to turn on reminders.",
+    unsupported: "This browser can't show reminders. Add an email above instead.",
+    blocked: "Notifications are blocked for this site. Allow them in your browser settings.",
+    unconfigured: "Phone reminders aren't switched on for this server yet.",
     on: "Reminders are on for this phone.",
     off: "Get reconfirmation and pickup reminders on this phone.",
-  }[state];
+  };
 
   return (
-    <div className="space-y-2 text-sm">
-      <p className="text-muted">{text}</p>
-      {state === "off" && <button className="btn-secondary" onClick={enable}>Turn on reminders</button>}
-      {state === "on" && <button className="btn-secondary" onClick={disable}>Turn off</button>}
+    <div className="space-y-3 text-sm">
+      <p className="text-muted">{text[state]}</p>
+      {state === "off" && <button className="btn-secondary w-full" onClick={enable}>Turn on reminders</button>}
+      {state === "on" && <button className="btn-secondary w-full" onClick={disable}>Turn off</button>}
       {error && <p className="text-danger">{error}</p>}
     </div>
   );

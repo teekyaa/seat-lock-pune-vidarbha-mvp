@@ -3,17 +3,23 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ActionBar } from "@/components/ActionBar";
+import { PolicyTimeline } from "@/components/PolicyTimeline";
+import { Sheet } from "@/components/Sheet";
 import { call } from "@/lib/client";
 import type { Booking, Ride } from "@/lib/types";
 
+/** Passenger's sticky action bar on a ride, and the request / waitlist sheets behind it. */
 export function RideActions({ ride, signedIn, profileComplete }: { ride: Ride; signedIn: boolean; profileComplete: boolean }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [ack, setAck] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const viewer = ride.viewer;
   const here = `/r/${ride.code}`;
+  const offer = viewer?.waitlist;
 
   async function run(fn: () => Promise<void>) {
     setBusy(true);
@@ -27,98 +33,108 @@ export function RideActions({ ride, signedIn, profileComplete }: { ride: Ride; s
     }
   }
 
-  if (ride.status !== "open") return null;
-  if (!signedIn) {
-    return (
-      <div className="card space-y-2 text-sm">
-        <p>Sign in with your phone number to request a seat.</p>
-        <Link href={`/login?next=${here}`} className="btn-primary w-full">Sign in to book</Link>
-      </div>
-    );
-  }
-  if (!profileComplete) {
-    return (
-      <div className="card text-sm">
-        <Link href={`/me?next=${here}`} className="btn-primary w-full">Finish your profile to book</Link>
-      </div>
-    );
-  }
-  if (viewer?.booking_code) {
-    return (
-      <div className="card text-sm">
-        <Link href={`/bookings/${viewer.booking_code}`} className="btn-primary w-full">Open your booking</Link>
-      </div>
-    );
-  }
-
-  const policyBox = (
-    <label className="flex items-start gap-2 text-sm">
-      <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-1" />
-      <span>I agree to the cancellation policy below, with these exact times.</span>
-    </label>
+  const price = (
+    <div className="min-w-0">
+      <p className="text-xl font-extrabold leading-tight tabular-nums">₹{ride.fare_inr.toLocaleString("en-IN")}</p>
+      <p className="text-xs text-muted">₹{ride.advance_inr} advance locks it</p>
+    </div>
   );
 
-  const offer = viewer?.waitlist;
-  if (offer?.status === "offered") {
-    return (
-      <div className="card space-y-3 border-brand">
-        <p className="font-semibold text-brand">A seat opened up for you. Accept by {offer.offer_expires_at?.ist}.</p>
-        {policyBox}
-        <button className="btn-primary w-full" disabled={busy || !ack} onClick={() => run(async () => {
-          const b = await call<Booking>(`/waitlist/${offer.id}/accept`, "POST", { policy_ack: ack });
-          router.push(`/bookings/${b.code}`);
-        })}>Take the seat</button>
-        <button className="btn-secondary w-full" disabled={busy} onClick={() => run(async () => {
-          await call(`/waitlist/${offer.id}/withdraw`, "POST");
-          router.refresh();
-        })}>No thanks</button>
-        {error && <p className="text-sm text-danger" role="alert">{error}</p>}
+  let bar: React.ReactNode;
+  if (ride.status !== "open") {
+    bar = <p className="py-2 text-center text-base font-semibold text-muted">This ride isn&apos;t taking bookings.</p>;
+  } else if (!signedIn) {
+    bar = <div className="flex items-center gap-3">{price}<Link href={`/login?next=${here}`} className="btn-primary ml-auto flex-1">Sign in to book</Link></div>;
+  } else if (!profileComplete) {
+    bar = <Link href={`/me?next=${here}`} className="btn-primary w-full">Finish your profile to book</Link>;
+  } else if (viewer?.booking_code) {
+    bar = <Link href={`/bookings/${viewer.booking_code}`} className="btn-primary w-full">Open your booking</Link>;
+  } else if (offer?.status === "offered") {
+    bar = (
+      <div className="space-y-2">
+        <p className="text-center text-sm font-semibold">A seat opened for you. Take it by {offer.offer_expires_at?.ist}.</p>
+        <button className="btn-primary w-full bg-ink" onClick={() => setOpen(true)}>Take the seat</button>
       </div>
     );
-  }
-  if (offer?.status === "waiting") {
-    return (
-      <div className="card space-y-2 text-sm">
-        <p>You&apos;re on the waitlist. If a seat opens, we&apos;ll offer it to you first in line.</p>
-        <button className="btn-secondary w-full" disabled={busy} onClick={() => run(async () => {
+  } else if (offer?.status === "waiting") {
+    bar = (
+      <div className="flex items-center gap-3">
+        <p className="flex-1 text-sm">You&apos;re on the waitlist. We&apos;ll offer you the next free seat.</p>
+        <button className="btn-secondary" disabled={busy} onClick={() => run(async () => {
           await call(`/waitlist/${offer.id}/withdraw`, "POST");
           router.refresh();
-        })}>Leave the waitlist</button>
+        })}>Leave</button>
       </div>
     );
-  }
-
-  if (ride.seats_left === 0) {
-    return (
-      <div className="card space-y-2 text-sm">
-        <p>This ride is full. Join the waitlist and you&apos;ll get a timed offer if a seat opens.</p>
-        <button className="btn-primary w-full" disabled={busy} onClick={() => run(async () => {
+  } else if (ride.seats_left === 0) {
+    bar = (
+      <div className="flex items-center gap-3">{price}
+        <button className="btn-primary ml-auto flex-1" disabled={busy} onClick={() => run(async () => {
           await call(`/rides/${ride.code}/waitlist`, "POST");
           router.refresh();
-        })}>Join the waitlist</button>
-        {error && <p className="text-danger" role="alert">{error}</p>}
+        })}>Join waitlist</button>
       </div>
     );
+  } else {
+    bar = <div className="flex items-center gap-3">{price}<button className="btn-primary ml-auto flex-1" onClick={() => setOpen(true)}>Request a seat</button></div>;
   }
 
+  const isOffer = offer?.status === "offered";
   return (
-    <form className="card space-y-3" onSubmit={(e) => {
-      e.preventDefault();
-      run(async () => {
-        const b = await call<Booking>(`/rides/${ride.code}/request`, "POST", { note, policy_ack: ack });
-        router.push(`/bookings/${b.code}`);
-      });
-    }}>
-      <h2 className="font-bold">Request a seat</h2>
-      <textarea className="field" rows={2} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)}
-        placeholder="Say hello. Mention luggage or where you'd like to be dropped." />
-      <p className="text-xs text-muted">
-        If the driver accepts, you&apos;ll have {ride.policy?.hold_hours ?? 2} hours to pay the ₹{ride.advance_inr} advance over UPI.
-        Requests close at {ride.requests_close_at?.ist}.
-      </p>
-      {policyBox}
-      {error && <p className="text-sm text-danger" role="alert">{error}</p>}
-      <button className="btn-primary w-full" disabled={busy || !ack}>{busy ? "Sending" : "Send request"}</button>
-    </form>
+    <>
+      <ActionBar>
+        {bar}
+        {error && !open && <p className="mt-2 text-center text-sm text-danger" role="alert">{error}</p>}
+      </ActionBar>
+
+      <Sheet open={open} onClose={() => setOpen(false)} title={isOffer ? "Take this seat" : "Request a seat"}>
+        <form className="space-y-5" onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            const b = isOffer
+              ? await call<Booking>(`/waitlist/${offer!.id}/accept`, "POST", { policy_ack: ack })
+              : await call<Booking>(`/rides/${ride.code}/request`, "POST", { note, policy_ack: ack });
+            router.push(`/bookings/${b.code}`);
+          });
+        }}>
+          <ol className="space-y-3">
+            {[
+              isOffer ? "The seat is held for you now." : `${ride.driver.name.split(" ")[0]} accepts or declines. If they don't reply in time, the request lapses.`,
+              `You pay the ₹${ride.advance_inr} advance straight to them over UPI within ${ride.policy?.hold_hours ?? 2} hours.`,
+              "They mark it received and your seat is locked. You'll see their number and the car then.",
+            ].map((t, i) => (
+              <li key={t} className="flex gap-3 text-sm">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-mile text-xs font-bold">{i + 1}</span>
+                <span className="pt-0.5">{t}</span>
+              </li>
+            ))}
+          </ol>
+
+          {!isOffer && (
+            <div>
+              <label className="label" htmlFor="note">Message to the driver (optional)</label>
+              <textarea id="note" className="field" rows={2} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)}
+                placeholder="Hi! One backpack. Drop near Sitabuldi if possible." />
+            </div>
+          )}
+
+          {ride.cutoffs && (
+            <div className="rounded-2xl bg-paper p-4">
+              <p className="mb-3 text-sm font-bold">If plans change</p>
+              <PolicyTimeline cutoffs={ride.cutoffs} advance={ride.advance_inr} />
+            </div>
+          )}
+
+          <label className="flex min-h-12 items-start gap-3 text-base">
+            <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-1 h-5 w-5 accent-brand" />
+            <span>I agree to these cancellation times.</span>
+          </label>
+          {error && <p className="text-sm text-danger" role="alert">{error}</p>}
+          <button className="btn-primary w-full" disabled={busy || !ack}>
+            {busy ? "Sending" : isOffer ? "Take the seat" : "Send request"}
+          </button>
+        </form>
+      </Sheet>
+    </>
   );
 }
