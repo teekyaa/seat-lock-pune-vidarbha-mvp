@@ -1,0 +1,12 @@
+{
+  "name": "seat-lock-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local, dependency-free Seat Lock MVP demo",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
