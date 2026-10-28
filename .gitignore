@@ -1,5 +1,25 @@
+# Prototype
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
+prototype/data/
+
+# Node / Next.js
 node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Python / Django
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+staticfiles/
+db.sqlite3
+
+# Env
+.env
+.env.local
 .DS_Store

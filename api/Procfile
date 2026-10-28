@@ -1,0 +1,4 @@
+release: python manage.py migrate --noinput && python manage.py seed_reference_data
+web: gunicorn seatlock.wsgi --bind 0.0.0.0:$PORT --workers 3 --access-logfile -
+worker: celery -A seatlock worker --loglevel INFO --concurrency 2
+beat: celery -A seatlock beat --loglevel INFO
