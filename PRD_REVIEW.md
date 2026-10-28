@@ -6,6 +6,8 @@
 
 This review records how the current prototype maps to the PRD and identifies product and delivery decisions that remain open. The PRD remains the product source of truth; this review does not silently remove its requirements. “First release” below means available in the local demonstration, often with simulated records. It does **not** mean safe or complete for a public beta.
 
+> **Update 2026-10-28:** the production stack is now built in `api/` and `web/` (see `docs/PRODUCTION_PLAN.md`). The requirement table below was written for the prototype; the "Production build status" section after it records what changed. The prototype moved to `prototype/`.
+
 ## Executive summary
 
 Seat Lock is intended to help owner-drivers and passengers arrange cost-sharing rides from Pune to Vidarbha, agree on a clear advance/refund policy, refill cancelled seats from a waitlist, and build a reliability record. WhatsApp is the acquisition and sharing channel, not something the app is intended to replace. The key product promise is that both parties know what happens to the advance if plans change.
@@ -124,18 +126,23 @@ Likelihood/impact are qualitative planning estimates, not measured incident rate
 | Festival demand/adoption does not meet assumptions | Medium | High | Baseline and admin participation are unknown; targets are provisional. | Concierge-test selected WhatsApp groups/admins, track activation and cancellation baselines, and use gates to change policy before feature expansion. |
 | Local share link is mistaken for a public ride page | Medium | Medium | `localhost` links only work on the same machine; no dynamic Open Graph preview exists. | Label local demos clearly; use a deployed public URL and server-rendered metadata before asking users to share live rides. |
 
-## Architecture difference from the PRD
+## Production build status
 
-| Layer | PRD proposal | Current prototype | Reason and unresolved production work |
-| --- | --- | --- | --- |
-| Web | Next.js App Router, TypeScript, Tailwind, PWA, server-rendered ride pages | Static HTML, browser JavaScript and CSS | Fast local demo without a build/deploy pipeline. Dynamic public link previews, PWA, production accessibility, and real onboarding remain unimplemented. |
-| API | Django REST Framework | Node.js built-in HTTP server with a small JSON API | Keeps the prototype dependency-free. Production auth, admin/moderation, schema migrations, audit, and API hardening remain open. |
-| Background jobs | Celery/beat and Redis | No worker or scheduler | Time-based state is recalculated on app open/action. Durable reminders, expiry, alerts, retries, and restart behavior are absent. |
-| Data | PostgreSQL 16, enums, row locks, materialized reliability view | Local SQLite using Node's built-in `node:sqlite` | Easy same-day setup; not a multi-instance concurrency or managed-backup solution. A migration plan and tested atomic seat reservation are needed. |
-| Media/integrations | Object storage, SMS/email/push, monitoring | No external service credentials or real user media | Avoids integrations in a local prototype; consent, provider, retention, and operations must be decided before collection/use. |
-| Hosting | Vercel web plus Railway API, worker, PostgreSQL, Redis | Server binds to `127.0.0.1` | Local-only by design. Public TLS, availability, operations, backups, monitoring, and deployment are not configured. |
+| Area | Now in `api/` + `web/` | Still open |
+| --- | --- | --- |
+| US-01/02/03 Sign-up, profile, car, UPI | Phone OTP with limits, profile completion with terms acceptance, saved cars, validated UPI ID | Real SMS provider, photo upload/storage, consent and retention policy |
+| US-04/05 Post ride, fair fare | 6 h lead time, seats capped by car, fare suggestion from `city_pairs` and 15% server-side cap | Approved distance/toll/fuel figures; legal review of the cap; co-driver flow |
+| US-06 WhatsApp card | Server-rendered `/r/<code>` with per-ride OG image | Needs a public deployment to be useful |
+| US-08 to US-11 Request, accept, UPI, confirm | Policy acknowledgment by both sides, 2 h holds, UPI deep link, driver-only confirmation under a ride row lock | Run the last-seat race test on PostgreSQL |
+| US-12/13/18 Cancellation, driver cancel, refill | Tiers with fixed boundaries, decided at departure or refill, season strike block, reschedule rule | Sign-off on decisions 1 to 4 in `docs/PRODUCTION_PLAN.md` |
+| US-14/15 Refund and no-show disputes | Overdue refunds become public open disputes; no-show dispute window; ops rulings in Django admin | Reviewer roles, evidence standard, SLA staffing |
+| US-16/17 Reconfirmation, waitlist | Notification rows and per-minute tick: 72/48/12 h reminders, at-risk flag and waitlist alert, timed offers | Choose email provider; generate VAPID keys |
+| US-19 Women-only | Staff-verified flag enforced on posting, requesting and waitlist | Verification process and appeals |
+| US-20/21/22 Report, block, record, trip check | Reports queue, blocks hide rides, append-only events with corrections, materialised public record | Visibility and appeal policy |
 
-The PRD's proposed design is a multi-component modular monolith rather than the smallest same-day demo. The current stack is a deliberate prototype shortcut, not a replacement product decision. Keep the production choice open until the concierge gate validates the core behavior; preserve the PRD's service requirements when that decision is made.
+## Architecture versus the PRD
+
+The build follows the PRD stack: Next.js App Router (TypeScript, Tailwind, PWA) for Vercel, Django + DRF for Railway, Celery worker and beat on Redis, PostgreSQL 16. Locally it also runs without Redis (`manage.py run_scheduler`) and, for quick checks only, on SQLite. Backups, monitoring and the actual deployment are not set up yet.
 
 ## Safe demo claims versus public-launch claims
 

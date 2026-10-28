@@ -1,0 +1,29 @@
+[project]
+name = "seatlock-api"
+version = "0.1.0"
+description = "Seat Lock API: Django + DRF + Celery"
+requires-python = ">=3.12"
+dependencies = [
+    "celery[redis]>=5.4",
+    "dj-database-url>=2.2",
+    "django>=5.2,<5.3",
+    "djangorestframework>=3.15",
+    "gunicorn>=23",
+    "psycopg[binary]>=3.2",
+    "pywebpush>=2.0",
+    "redis>=5.0",
+    "whitenoise>=6.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-django>=4.9",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "seatlock.settings"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore:No directory at:UserWarning"]
