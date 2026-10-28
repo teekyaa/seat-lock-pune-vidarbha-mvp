@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f4ef">
+    <meta name="description" content="Seat Lock — a Pune to Vidarbha carpool demo with clear seat and cancellation rules.">
+    <title>Seat Lock · Pune to Vidarbha</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="demo-banner"><span class="demo-dot"></span> DEMO BUILD <span class="banner-divider">·</span> Payments are simulated. No money moves here.</div>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Seat Lock home">
+        <span class="brand-mark"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M9 21.5 11.7 12a3 3 0 0 1 2.9-2.2h6.8a3 3 0 0 1 2.9 2.2l2.7 9.5v6h-3.2v-3H12.2v3H9v-6Z"/><path d="M12 19.5h12M13.2 14h9.6"/><circle cx="13" cy="22.4" r="1.2"/><circle cx="23" cy="22.4" r="1.2"/></svg></span>
+        <span class="brand-name">seat<span>lock</span></span>
+      </a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-link active" data-view="find">Find a ride</button>
+        <button class="nav-link" data-view="offer">Offer a ride</button>
+        <button class="nav-link" data-view="bookings">My bookings</button>
+      </nav>
+      <label class="profile-switch"><span class="switch-label">DEMO AS</span><select id="user-switch" aria-label="Choose demo profile"></select><span class="chevron">⌄</span></label>
+    </header>
+    <main id="app" class="page-shell"><div class="loading">Loading your demo rides…</div></main>
+    <footer class="site-footer"><span>Seat Lock <span class="footer-sep">/</span> Pune to Vidarbha</span><span>Built for the road home. <span aria-hidden="true">✳</span></span></footer>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
