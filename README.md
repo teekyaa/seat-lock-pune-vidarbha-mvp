@@ -96,7 +96,7 @@ The app creates a sample Pune–Nagpur ride on first startup. New rides and book
 
 ## PRD review: scope, contradictions, decisions, and risks
 
-The PRD remains the product source of truth. This section records how the current local prototype maps to it; a prototype status does not mean a requirement is ready for public use. **First release (prototype)** means a user can demonstrate the flow with local demo profiles and simulated records. **Deferred** means the PRD requirement is not implemented or is intentionally outside this prototype. **Needs decision** means the PRD does not yet define one consistent, safe rule. None of these labels silently removes a PRD requirement.
+The PRD remains the product source of truth. This section records how the current local prototype maps to it; a prototype status does not mean a requirement is ready for public use. **First release (prototype)** means a user can demonstrate the flow with local demo profiles and simulated records. **Deferred** means the PRD requirement is not implemented or is intentionally outside this prototype. **Needs decision** means the PRD does not yet define one consistent, safe rule. None of these labels silently removes a PRD requirement. See the standalone [PRD review](PRD_REVIEW.md) for the full story-by-story assessment, decision register, risk register, architecture comparison, and launch gates.
 
 ### Requirement-by-requirement status
 
