@@ -7,7 +7,7 @@ from apps.core import policy as calc
 from apps.core.errors import DomainError, Forbidden
 from apps.core.models import CityPair, PolicyVersion, audit
 from apps.core.timefmt import ist
-from apps.trust.services import posting_blocked_until
+from apps.trust.services import alert_matching_seat_wanted, posting_blocked_until
 
 from .models import Ride
 
@@ -55,7 +55,7 @@ def with_seat_counts(qs):
 
 
 def create_ride(driver, *, city_pair, vehicle, departure_at, seats_offered, fare_inr, pickup_point, dropoff_point,
-                pickup_details="", notes="", women_only=False, duration_hours=None, policy_ack=False):
+                pickup_details="", notes="", women_only=False, codriver_wanted=False, duration_hours=None, policy_ack=False):
     now = timezone.now()
     policy = PolicyVersion.current(now)
     if not driver.profile_complete:
@@ -110,9 +110,11 @@ def create_ride(driver, *, city_pair, vehicle, departure_at, seats_offered, fare
         fare_inr=fare_inr,
         advance_inr=advance_for(fare_inr, policy),
         women_only=women_only,
+        codriver_wanted=codriver_wanted,
         notes=notes.strip(),
     )
     audit(driver, "ride.created", ride, fare_inr=fare_inr, suggested=quote["suggested_fare_inr"])
+    alert_matching_seat_wanted(ride)
     return ride
 
 

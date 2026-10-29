@@ -53,6 +53,7 @@ def ride_json(ride, viewer=None, *, detail=False):
         "code": ride.code,
         "origin": ride.city_pair.origin,
         "destination": ride.city_pair.destination,
+        "distance_km": ride.city_pair.distance_km,
         "departure_at": _dt(ride.departure_at),
         "expected_arrival_at": _dt(ride.expected_arrival_at),
         "pickup_point": ride.pickup_point,
@@ -63,6 +64,7 @@ def ride_json(ride, viewer=None, *, detail=False):
         "suggested_fare_inr": ride.suggested_fare_inr,
         "advance_inr": ride.advance_inr,
         "women_only": ride.women_only,
+        "codriver_wanted": ride.codriver_wanted,
         "notes": ride.notes,
         "status": ride.status,
         "driver": public_user(ride.driver),
@@ -81,7 +83,10 @@ def ride_json(ride, viewer=None, *, detail=False):
         viewer_info["booking_code"] = active.code if active else None
         entry = ride.waitlist.filter(passenger=viewer).first()
         if entry:
-            viewer_info["waitlist"] = {"id": entry.pk, "status": entry.status, "offer_expires_at": _dt(entry.offer_expires_at)}
+            viewer_info["waitlist"] = {
+                "id": entry.pk, "status": entry.status, "role": entry.role,
+                "offer_expires_at": _dt(entry.offer_expires_at),
+            }
     data["viewer"] = viewer_info
     if is_co_traveller(ride, viewer):
         data["private"] = {
@@ -151,6 +156,9 @@ def booking_json(booking, viewer):
         "status": booking.status,
         "status_label": booking.get_status_display(),
         "role": "driver" if is_driver else "passenger",
+        "seat_role": booking.role,
+        "seat_role_label": booking.get_role_display(),
+        "co_driver_license_self_attested": bool(booking.co_driver_license_confirmed_at),
         "ride": ride_json(ride, viewer),
         "ride_code": ride.code,
         "passenger": public_user(booking.passenger),

@@ -3,151 +3,215 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ChevronIcon } from "@/components/icons";
+import { PageHeader } from "@/components/PageHeader";
 import { PushToggle } from "@/components/PushToggle";
+import { ConfirmSheet, Sheet } from "@/components/Sheet";
 import { call } from "@/lib/client";
 import type { Me, Vehicle } from "@/lib/types";
 
-const TOWNS = ["Pune", "Nagpur", "Wardha", "Chandrapur", "Amravati", "Yavatmal", "Other"];
+const TOWNS = ["Nagpur", "Wardha", "Chandrapur", "Amravati", "Yavatmal", "Akola", "Pune", "Other"];
+
+type Form = Pick<Me, "name" | "hometown" | "gender" | "college_or_workplace" | "email" | "upi_id">;
 
 export function ProfileForm({ me, vehicles, next }: { me: Me; vehicles: Vehicle[]; next?: string }) {
   const router = useRouter();
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<Form>({
     name: me.name, hometown: me.hometown, gender: me.gender, college_or_workplace: me.college_or_workplace,
     email: me.email, upi_id: me.upi_id,
   });
   const [accept, setAccept] = useState(Boolean(me.terms_accepted_at));
-  const [car, setCar] = useState({ make_model: "", colour: "", registration: "", passenger_seats: 3 });
-  const [msg, setMsg] = useState("");
+  const [car, setCar] = useState({ make_model: "", colour: "", registration: "", passenger_seats: 4 });
+  const [carOpen, setCarOpen] = useState(false);
+  const [removeCar, setRemoveCar] = useState<Vehicle | null>(null);
+  const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const onboarding = !me.profile_complete;
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm({ ...form, [k]: e.target.value });
+    setSaved("");
+  };
+
+  async function run(fn: () => Promise<unknown>, done?: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+      if (done) setSaved(done);
+      router.refresh();
+      return true;
+    } catch (err) {
+      setError((err as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
-    try {
+    await run(async () => {
       const updated = await call<Me>("/me", "PATCH", { ...form, accept_terms: accept });
-      setMsg("Saved.");
-      router.refresh();
       if (updated.profile_complete && next) router.push(next);
-    } catch (err) {
-      setError((err as Error).message);
-    }
+    }, "Saved");
   }
 
-  async function addCar(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    try {
-      await call("/me/vehicles", "POST", car);
-      setCar({ make_model: "", colour: "", registration: "", passenger_seats: 3 });
-      router.refresh();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
+  const field = (k: keyof Form, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}, hint?: string) => (
+    <div>
+      <label className="label" htmlFor={k}>{label}</label>
+      <input id={k} className="field" value={form[k]} onChange={set(k)} {...props} />
+      {hint && <p className="hint">{hint}</p>}
+    </div>
+  );
 
-  async function removeCar(id: number) {
-    try {
-      await call(`/me/vehicles/${id}`, "DELETE");
-      router.refresh();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
+  const profileFields = (
+    <>
+      {field("name", "Full name", { required: true, maxLength: 80, autoComplete: "name" })}
+      <div>
+        <span className="label">Hometown</span>
+        <div className="flex flex-wrap gap-2">
+          {TOWNS.map((t) => (
+            <button type="button" key={t} className="chip" aria-current={form.hometown === t}
+              onClick={() => { setForm({ ...form, hometown: t }); setSaved(""); }}>{t}</button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="label" htmlFor="gender">Gender</label>
+        <select id="gender" className="field" value={form.gender} onChange={set("gender")}>
+          <option value="female">Female</option>
+          <option value="male">Male</option>
+          <option value="other">Other</option>
+          <option value="undisclosed">Prefer not to say</option>
+        </select>
+      </div>
+      {field("college_or_workplace", "College or workplace (optional)", { maxLength: 120 }, "Helps people from the same place find each other.")}
+    </>
+  );
 
-  async function signOut() {
-    await fetch("/session", { method: "DELETE" });
-    router.push("/");
-    router.refresh();
+  if (onboarding) {
+    return (
+      <form onSubmit={save} className="pad-tabbar">
+        <PageHeader title="Welcome" subtitle="A few details so drivers and passengers know who they're travelling with." />
+        <div className="space-y-5">
+          {profileFields}
+          <label className="flex min-h-12 items-start gap-3 rounded-xl bg-surface p-4 text-base ring-1 ring-line">
+            <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} className="mt-1 h-5 w-5 accent-brand" />
+            <span>I&apos;ll share travel costs only, never charge for profit, and follow the community rules.</span>
+          </label>
+          {error && <p className="rounded-xl bg-danger-wash p-3 text-sm text-danger" role="alert">{error}</p>}
+          <button className="btn-primary w-full" disabled={busy || !form.name || !form.hometown || !accept}>
+            {busy ? "Saving" : "Continue"}
+          </button>
+          <p className="text-center text-sm text-muted">Signed in as {me.phone}</p>
+        </div>
+      </form>
+    );
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Your profile</h1>
-        <Link href={`/u/${me.id}`} className="text-sm font-semibold text-brand">See your public record</Link>
-      </div>
+    <div className="pad-tabbar space-y-5">
+      <PageHeader title="Me" />
+      <Link href={`/u/${me.id}`} className="card flex items-center gap-3 active:bg-paper">
+        <span className="grid h-14 w-14 place-items-center rounded-full bg-brand-wash text-xl font-extrabold text-brand">{me.name.slice(0, 1)}</span>
+        <span className="flex-1">
+          <span className="block text-lg font-bold">{me.name}</span>
+          <span className="block text-sm text-muted">{me.phone}. See your public record</span>
+        </span>
+        <ChevronIcon className="h-5 w-5 text-muted" />
+      </Link>
 
-      <form onSubmit={save} className="card space-y-3">
-        <p className="text-sm text-muted">Signed in as {me.phone}. Your number is only shown to people on a confirmed booking with you.</p>
-        <div>
-          <label className="label" htmlFor="name">Full name</label>
-          <input id="name" className="field" value={form.name} onChange={set("name")} required maxLength={80} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label" htmlFor="hometown">Hometown</label>
-            <select id="hometown" className="field" value={form.hometown} onChange={set("hometown")} required>
-              <option value="">Choose</option>
-              {TOWNS.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label" htmlFor="gender">Gender</label>
-            <select id="gender" className="field" value={form.gender} onChange={set("gender")}>
-              <option value="female">Female</option>
-              <option value="male">Male</option>
-              <option value="other">Other</option>
-              <option value="undisclosed">Prefer not to say</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label className="label" htmlFor="work">College or workplace</label>
-          <input id="work" className="field" value={form.college_or_workplace} onChange={set("college_or_workplace")} maxLength={120} />
-        </div>
-        <div>
-          <label className="label" htmlFor="upi">UPI ID</label>
-          <input id="upi" className="field" value={form.upi_id} onChange={set("upi_id")} placeholder="name@okaxis" />
-          <p className="hint">Drivers need this so passengers can pay the advance. Passengers need it for refunds.</p>
-        </div>
-        <div>
-          <label className="label" htmlFor="email">Email for trip reminders</label>
-          <input id="email" type="email" className="field" value={form.email} onChange={set("email")} />
-        </div>
-        {me.women_only_eligible && <p className="pill bg-pink-50 text-pink-700">Verified for women-only rides</p>}
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} disabled={Boolean(me.terms_accepted_at)} className="mt-1" />
-          <span>I agree to share costs only, never to make a profit, and to the Seat Lock community rules.</span>
-        </label>
-        <button className="btn-primary w-full">Save profile</button>
-        {msg && <p className="text-sm text-brand">{msg}</p>}
+      <form onSubmit={save} className="space-y-5">
+        <section className="card space-y-5">
+          <h2 className="text-lg font-bold">About you</h2>
+          {profileFields}
+          {me.women_only_eligible && <p className="pill bg-pink-50 text-pink-800">Verified for women-only rides</p>}
+        </section>
+
+        <section className="card space-y-5">
+          <h2 className="text-lg font-bold">Payments and reminders</h2>
+          {field("upi_id", "UPI ID", { placeholder: "name@okaxis", autoCapitalize: "none", autoCorrect: "off", spellCheck: false },
+            "Passengers pay your advance here. As a passenger, refunds come here.")}
+          {field("email", "Email for reminders", { type: "email", autoComplete: "email", inputMode: "email" })}
+        </section>
+
+        {error && <p className="rounded-xl bg-danger-wash p-3 text-sm text-danger" role="alert">{error}</p>}
+        <button className="btn-primary w-full" disabled={busy}>{busy ? "Saving" : saved || "Save changes"}</button>
       </form>
 
       <section className="card space-y-3">
-        <h2 className="font-bold">Your cars</h2>
-        {vehicles.length === 0 && <p className="text-sm text-muted">Add a car to offer rides.</p>}
-        {vehicles.map((v) => (
-          <div key={v.id} className="flex items-center justify-between rounded-xl bg-paper p-3 text-sm">
-            <span>{v.colour} {v.make_model} · {v.registration} · {v.passenger_seats} seats</span>
-            <button className="text-danger" onClick={() => removeCar(v.id)}>Remove</button>
-          </div>
-        ))}
-        <form onSubmit={addCar} className="grid grid-cols-2 gap-2">
-          <input className="field col-span-2" placeholder="Make and model, e.g. Maruti Ertiga" value={car.make_model}
-            onChange={(e) => setCar({ ...car, make_model: e.target.value })} required />
-          <input className="field" placeholder="Colour" value={car.colour} onChange={(e) => setCar({ ...car, colour: e.target.value })} />
-          <input className="field" placeholder="MH12AB1234" value={car.registration}
-            onChange={(e) => setCar({ ...car, registration: e.target.value })} required />
-          <label className="col-span-2 text-sm">
-            Passenger seats
-            <input type="number" min={1} max={7} className="field mt-1" value={car.passenger_seats}
-              onChange={(e) => setCar({ ...car, passenger_seats: Number(e.target.value) })} />
-          </label>
-          <button className="btn-secondary col-span-2">Add car</button>
-        </form>
-        <p className="hint">Your registration number is only shown to confirmed passengers.</p>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">Your cars</h2>
+          <button className="btn-ghost min-h-10 px-3" onClick={() => setCarOpen(true)}>Add car</button>
+        </div>
+        {vehicles.length === 0 && <p className="text-sm text-muted">Add a car to offer seats.</p>}
+        <ul className="divide-y divide-line">
+          {vehicles.map((v) => (
+            <li key={v.id} className="flex min-h-14 items-center justify-between gap-3">
+              <span>
+                <span className="block font-semibold">{v.colour} {v.make_model}</span>
+                <span className="block text-sm text-muted">{v.registration}, {v.passenger_seats} passenger seats</span>
+              </span>
+              <button className="min-h-11 px-2 text-sm font-semibold text-danger" onClick={() => setRemoveCar(v)}>Remove</button>
+            </li>
+          ))}
+        </ul>
+        <p className="hint">Only confirmed passengers see your registration number.</p>
       </section>
 
       <section className="card space-y-3">
-        <h2 className="font-bold">Reminders on this phone</h2>
+        <h2 className="text-lg font-bold">Reminders on this phone</h2>
         <PushToggle />
       </section>
 
-      {error && <p className="text-sm text-danger" role="alert">{error}</p>}
-      <button className="btn-secondary w-full" onClick={signOut}>Sign out</button>
+      <button className="btn-secondary w-full" onClick={async () => {
+        await fetch("/session", { method: "DELETE" });
+        router.replace("/");
+        router.refresh();
+      }}>Sign out</button>
+
+      <Sheet open={carOpen} onClose={() => setCarOpen(false)} title="Add a car">
+        <form className="space-y-4" onSubmit={async (e) => {
+          e.preventDefault();
+          if (await run(() => call("/me/vehicles", "POST", car))) {
+            setCar({ make_model: "", colour: "", registration: "", passenger_seats: 4 });
+            setCarOpen(false);
+          }
+        }}>
+          <div>
+            <label className="label" htmlFor="mm">Make and model</label>
+            <input id="mm" className="field" placeholder="Maruti Ertiga" value={car.make_model} onChange={(e) => setCar({ ...car, make_model: e.target.value })} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="col">Colour</label>
+              <input id="col" className="field" placeholder="White" value={car.colour} onChange={(e) => setCar({ ...car, colour: e.target.value })} />
+            </div>
+            <div>
+              <label className="label" htmlFor="reg">Registration</label>
+              <input id="reg" className="field uppercase" placeholder="MH12AB1234" autoCapitalize="characters" value={car.registration}
+                onChange={(e) => setCar({ ...car, registration: e.target.value })} required />
+            </div>
+          </div>
+          <div>
+            <span className="label">Seats for passengers</span>
+            <div className="flex flex-wrap gap-2">
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                <button type="button" key={n} className="chip w-12" aria-current={car.passenger_seats === n}
+                  onClick={() => setCar({ ...car, passenger_seats: n })}>{n}</button>
+              ))}
+            </div>
+          </div>
+          {error && <p className="text-sm text-danger" role="alert">{error}</p>}
+          <button className="btn-primary w-full" disabled={busy}>Save car</button>
+        </form>
+      </Sheet>
+
+      <ConfirmSheet open={Boolean(removeCar)} onClose={() => setRemoveCar(null)} title="Remove this car?" danger busy={busy}
+        confirmLabel="Remove" onConfirm={async () => { if (removeCar && (await run(() => call(`/me/vehicles/${removeCar.id}`, "DELETE")))) setRemoveCar(null); }}
+        body={<><p>{removeCar?.colour} {removeCar?.make_model}, {removeCar?.registration}</p>{error && <p className="text-sm text-danger">{error}</p>}</>} />
     </div>
   );
 }

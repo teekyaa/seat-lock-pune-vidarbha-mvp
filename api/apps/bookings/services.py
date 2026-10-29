@@ -7,6 +7,8 @@ cancelled_passenger, cancelled_driver, no_show.
 Anything that can change how many seats are taken locks the ride row first
 (SELECT ... FOR UPDATE) and counts inside the same transaction.
 """
+import hashlib
+import secrets
 from datetime import timedelta
 from urllib.parse import quote
 
@@ -23,7 +25,7 @@ from apps.rides.services import HOLDING
 from apps.trust import services as trust
 from apps.trust.models import ReliabilityEvent
 
-from .models import Booking, NoShowCase, Payment, Reconfirmation, TripConfirmation, WaitlistEntry
+from .models import Booking, NoShowCase, Payment, Reconfirmation, TripConfirmation, TripShare, WaitlistEntry
 
 S = Booking.Status
 Kind = ReliabilityEvent.Kind
@@ -61,6 +63,18 @@ def _open_offers(ride, now, exclude=None):
 
 def _confirmed(ride):
     return ride.bookings.filter(status=S.CONFIRMED).count()
+
+
+def _codriver_taken(ride, now=None, *, exclude_offer=None):
+    now = now or _now()
+    if Booking.objects.filter(ride=ride, role=Booking.Role.CO_DRIVER, status__in=Booking.ACTIVE).exists():
+        return True
+    offers = ride.waitlist.filter(
+        role=Booking.Role.CO_DRIVER, status=WaitlistEntry.Status.OFFERED, offer_expires_at__gt=now
+    )
+    if exclude_offer is not None:
+        offers = offers.exclude(pk=exclude_offer.pk)
+    return offers.exists()
 
 
 def _route(ride):
@@ -108,7 +122,8 @@ def _create_refund(booking, amount, now):
 
 # ---------------------------------------------------------------- requests
 
-def request_seat(ride, passenger, *, note="", policy_ack=False):
+def request_seat(ride, passenger, *, note="", policy_ack=False, role=Booking.Role.PASSENGER,
+                 co_driver_license_ack=False):
     now = _now()
     with transaction.atomic():
         ride = _lock_ride(ride.pk)
@@ -121,6 +136,16 @@ def request_seat(ride, passenger, *, note="", policy_ack=False):
             raise DomainError("This ride is no longer taking requests.")
         if ride.driver_id == passenger.pk:
             raise DomainError("You can't request a seat on your own ride.")
+        if role not in Booking.Role.values:
+            raise DomainError("Choose passenger or co-driver.")
+        if role == Booking.Role.CO_DRIVER:
+            if not ride.codriver_wanted:
+                raise Conflict("This driver isn't looking for a co-driver.")
+            if not co_driver_license_ack:
+                raise DomainError("Confirm that you have a valid driving licence and agree to share driving.",
+                                  "co_driver_ack_required")
+            if _codriver_taken(ride, now):
+                raise Conflict("The co-driver spot is already taken.", "codriver_filled")
         if trust.is_blocked(passenger, ride.driver):
             raise Forbidden("This ride isn't available to you.")
         if ride.women_only and not passenger.women_only_eligible:
@@ -136,6 +161,8 @@ def request_seat(ride, passenger, *, note="", policy_ack=False):
             ride=ride,
             passenger=passenger,
             policy_version=policy,
+            role=role,
+            co_driver_license_confirmed_at=now if role == Booking.Role.CO_DRIVER else None,
             note=note.strip()[:300],
             fare_inr=ride.fare_inr,
             advance_inr=ride.advance_inr,
@@ -148,7 +175,7 @@ def request_seat(ride, passenger, *, note="", policy_ack=False):
             body=f"{passenger.name} from {passenger.hometown} asked for a seat on {_route(ride)}, {ist(ride.departure_at)}. "
                  f"Please reply by {ist(booking.request_expires_at)}.",
         )
-        audit(passenger, "booking.requested", booking)
+        audit(passenger, "booking.requested", booking, role=role)
     return booking
 
 
@@ -334,7 +361,8 @@ def cancel_by_passenger(booking, passenger):
                 booking.penalty_tier = Booking.PenaltyTier.HALF if tier == calc.HALF else Booking.PenaltyTier.ALL
                 booking.confirmed_seats_at_cancel = confirmed_before
                 booking.save()
-                kind = Kind.PASSENGER_LATE_CANCEL
+                kind = (Kind.CODRIVER_LATE_CANCEL if booking.role == Booking.Role.CO_DRIVER
+                        else Kind.PASSENGER_LATE_CANCEL)
             trust.record_event(passenger, kind, ride=ride, booking=booking, hours_before_departure=hours_left)
         elif previous == S.ADVANCE_CLAIMED:
             # Driver never confirmed receipt. If money did move, it all goes back.
@@ -355,6 +383,7 @@ def cancel_by_passenger(booking, passenger):
         )
         audit(passenger, "booking.cancelled", booking, previous=previous, hours_left=round(hours_left, 2))
         offer_waitlist(ride, now)
+    trust.alert_matching_seat_wanted(ride)
     return booking
 
 
@@ -432,6 +461,9 @@ def reschedule(ride, driver, new_departure_at):
         ride.departure_at = new_departure_at
         ride.expected_arrival_at = new_departure_at + duration
         ride.save()
+        TripShare.objects.filter(booking__ride=ride, revoked_at__isnull=True).update(
+            expires_at=ride.expected_arrival_at + timedelta(hours=24)
+        )
         confirmed = list(ride.bookings.select_for_update().filter(status=S.CONFIRMED).select_related("passenger"))
         big_change = shift_hours > policy.reschedule_tolerance_hours
         for booking in confirmed:
@@ -455,7 +487,7 @@ def reschedule(ride, driver, new_departure_at):
 
 # ---------------------------------------------------------------- waitlist
 
-def join_waitlist(ride, passenger):
+def join_waitlist(ride, passenger, *, role=Booking.Role.PASSENGER, co_driver_license_ack=False):
     now = _now()
     with transaction.atomic():
         ride = _lock_ride(ride.pk)
@@ -465,6 +497,16 @@ def join_waitlist(ride, passenger):
             raise DomainError("This ride is no longer open.")
         if ride.driver_id == passenger.pk:
             raise DomainError("You can't join the waitlist for your own ride.")
+        if role not in Booking.Role.values:
+            raise DomainError("Choose passenger or co-driver.")
+        if role == Booking.Role.CO_DRIVER:
+            if not ride.codriver_wanted:
+                raise Conflict("This driver isn't looking for a co-driver.")
+            if not co_driver_license_ack:
+                raise DomainError("Confirm that you have a valid driving licence and agree to share driving.",
+                                  "co_driver_ack_required")
+            if _codriver_taken(ride, now):
+                raise Conflict("The co-driver spot is already taken.", "codriver_filled")
         if trust.is_blocked(passenger, ride.driver):
             raise Forbidden("This ride isn't available to you.")
         if ride.women_only and not passenger.women_only_eligible:
@@ -480,6 +522,8 @@ def join_waitlist(ride, passenger):
             entry.status = WaitlistEntry.Status.WAITING
             entry.offered_at = entry.offer_expires_at = None
             entry.created_at = now  # back of the queue
+            entry.role = role
+            entry.co_driver_license_confirmed_at = now if role == Booking.Role.CO_DRIVER else None
             entry.save()
     return entry
 
@@ -495,6 +539,7 @@ def offer_waitlist(ride, now=None):
     policy = ride.policy_version
     free = ride.seats_offered - _held(ride) - _open_offers(ride, now)
     offered = []
+    codriver_reserved = _codriver_taken(ride, now)
     if free <= 0:
         return offered
     short = hours_between(ride.departure_at, now) < policy.request_close_hours
@@ -502,13 +547,19 @@ def offer_waitlist(ride, now=None):
     expires = min(now + timedelta(minutes=minutes), ride.departure_at)
     for entry in ride.waitlist.select_for_update().filter(status=WaitlistEntry.Status.WAITING).select_related(
         "passenger"
-    ).order_by("created_at")[:free]:
+    ).order_by("created_at"):
+        if len(offered) >= free:
+            break
+        if entry.role == Booking.Role.CO_DRIVER and codriver_reserved:
+            continue
         if trust.is_blocked(entry.passenger, ride.driver):
             continue
         entry.status = WaitlistEntry.Status.OFFERED
         entry.offered_at = now
         entry.offer_expires_at = expires
         entry.save()
+        if entry.role == Booking.Role.CO_DRIVER:
+            codriver_reserved = True
         notify.schedule(
             entry.passenger, "waitlist_offer", ride=ride, url=notify.ride_url(ride),
             title="A seat opened up for you",
@@ -539,11 +590,17 @@ def accept_waitlist_offer(entry, passenger, *, policy_ack=False):
             raise DomainError("Please agree to the cancellation policy to take the seat.", "policy_ack_required")
         if ride.status != Ride.Status.OPEN:
             raise Conflict("This ride is no longer open.")
+        if entry.role == Booking.Role.CO_DRIVER:
+            if not ride.codriver_wanted:
+                raise Conflict("The driver is no longer looking for a co-driver.")
+            if _codriver_taken(ride, now, exclude_offer=entry):
+                raise Conflict("The co-driver spot is already taken.", "codriver_filled")
         if ride.seats_offered - _held(ride) - _open_offers(ride, now, exclude=entry) <= 0:
             raise Conflict("That seat is no longer free.", "ride_full")
         policy = ride.policy_version
         booking = Booking.objects.create(
             ride=ride, passenger=passenger, policy_version=policy, note="From the waitlist",
+            role=entry.role, co_driver_license_confirmed_at=entry.co_driver_license_confirmed_at,
             fare_inr=ride.fare_inr, advance_inr=ride.advance_inr,
             status=S.ACCEPTED, passenger_policy_ack_at=now,
             driver_policy_ack_at=ride.created_at,  # the driver agreed to the policy when posting
@@ -574,6 +631,8 @@ def withdraw_waitlist(entry, passenger):
         entry.save()
         if was_offered:
             offer_waitlist(ride)
+    if was_offered:
+        trust.alert_matching_seat_wanted(ride)
     return entry
 
 
@@ -744,3 +803,40 @@ def block_participant(booking, blocker):
     blocked = booking.passenger if blocker.pk == ride.driver_id else ride.driver
     trust.block(blocker, blocked)
     return blocked
+
+
+# ---------------------------------------------------------------- emergency trip sharing
+
+def create_trip_share(booking, passenger):
+    """Issue a bearer link with only the trip details needed by a trusted contact."""
+    now = _now()
+    with transaction.atomic():
+        booking = _lock_booking(booking.pk)
+        _require_passenger(booking, passenger)
+        if booking.status not in (S.CONFIRMED, S.COMPLETED):
+            raise Conflict("Trip sharing is available after your seat is confirmed.")
+        expires_at = booking.ride.expected_arrival_at + timedelta(hours=24)
+        if expires_at <= now:
+            raise Conflict("This trip's sharing window has ended.")
+
+        # Keep one live link per booking. Creating a replacement immediately revokes the old one.
+        TripShare.objects.filter(booking=booking, revoked_at__isnull=True).update(revoked_at=now)
+        token = secrets.token_urlsafe(32)
+        TripShare.objects.create(
+            booking=booking,
+            token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+            expires_at=expires_at,
+        )
+        audit(passenger, "trip.share_created", booking, expires_at=expires_at.isoformat())
+    return token, expires_at
+
+
+def revoke_trip_shares(booking, passenger):
+    now = _now()
+    with transaction.atomic():
+        booking = _lock_booking(booking.pk)
+        _require_passenger(booking, passenger)
+        revoked = TripShare.objects.filter(booking=booking, revoked_at__isnull=True).update(revoked_at=now)
+        if revoked:
+            audit(passenger, "trip.share_revoked", booking, count=revoked)
+    return revoked

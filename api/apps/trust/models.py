@@ -9,6 +9,7 @@ class ReliabilityEvent(models.Model):
         TRIP_COMPLETED = "trip_completed", "Trip completed"
         PASSENGER_EARLY_CANCEL = "passenger_early_cancel", "Passenger cancelled early"
         PASSENGER_LATE_CANCEL = "passenger_late_cancel", "Passenger cancelled late"
+        CODRIVER_LATE_CANCEL = "codriver_late_cancel", "Co-driver cancelled late"
         DRIVER_EARLY_CANCEL = "driver_early_cancel", "Driver cancelled early"
         DRIVER_LATE_CANCEL = "driver_late_cancel", "Driver cancelled late"
         DRIVER_CHANGE = "driver_change", "Driver moved departure"
@@ -128,11 +129,21 @@ class Vouch(models.Model):
 
 
 class SeatWanted(models.Model):
-    """Should-have (US-23). Schema only for now."""
+    """A passenger's requested corridor and date window for US-23 ride alerts."""
 
     passenger = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="seat_wanted")
     city_pair = models.ForeignKey("core.CityPair", on_delete=models.CASCADE)
     travel_date = models.DateField()
     seats = models.PositiveSmallIntegerField(default=1)
+    flex_days = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["passenger", "city_pair", "travel_date"],
+                condition=models.Q(closed_at__isnull=True),
+                name="one_active_seat_wanted_per_day",
+            )
+        ]

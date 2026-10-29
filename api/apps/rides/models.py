@@ -32,6 +32,7 @@ class Ride(models.Model):
     fare_inr = models.PositiveIntegerField()
     advance_inr = models.PositiveIntegerField()
     women_only = models.BooleanField(default=False)
+    codriver_wanted = models.BooleanField(default=False)
     notes = models.TextField(blank=True, max_length=500)
 
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN, db_index=True)

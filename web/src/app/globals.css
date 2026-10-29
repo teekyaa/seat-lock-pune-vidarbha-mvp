@@ -1,36 +1,67 @@
 @import "tailwindcss";
 
+/*
+  Seat Lock visual language: Indian highway signage.
+  Sign green carries the brand, milestone yellow marks a locked seat and the route,
+  Overpass (descended from Highway Gothic) sets every word. Everything else stays quiet.
+*/
 @theme {
-  --color-ink: #18231f;
-  --color-muted: #66726b;
-  --color-paper: #f5f6f4;
-  --color-line: #e2e6e3;
-  --color-brand: #1f7a5e;
-  --color-brand-dark: #155f49;
-  --color-brand-wash: #e3f2ec;
-  --color-warn: #a35d00;
-  --color-warn-wash: #fff3df;
+  --color-ink: #13201a;        /* road: primary text */
+  --color-muted: #5d6b63;      /* secondary text, 4.9:1 on paper */
+  --color-paper: #f2f4f1;      /* page */
+  --color-surface: #ffffff;    /* sheets, cards */
+  --color-line: #dde3df;
+  --color-brand: #0d6a4e;      /* highway sign green */
+  --color-brand-dark: #0a523c;
+  --color-brand-wash: #e2f1ea;
+  --color-mile: #f4b400;       /* milestone cap yellow */
+  --color-mile-wash: #fff4d1;
+  --color-warn: #8a4b00;
+  --color-warn-wash: #fff1db;
   --color-danger: #b42318;
   --color-danger-wash: #fdecea;
-  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-overpass), ui-sans-serif, system-ui, sans-serif;
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1); /* iOS sheet curve */
 }
 
 :root {
   color-scheme: light;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tabbar-h: 60px;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   background: var(--color-paper);
   color: var(--color-ink);
   -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+  font-feature-settings: "tnum" 1;
+}
+
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-brand) 45%, transparent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @utility card {
-  @apply rounded-2xl border border-line bg-white p-4 shadow-[0_2px_10px_rgba(24,35,31,0.04)];
+  @apply rounded-2xl bg-surface p-4 ring-1 ring-line;
 }
 
 @utility btn {
-  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
+  @apply inline-flex min-h-12 select-none items-center justify-center gap-2 rounded-xl px-5 text-base font-semibold transition-[background-color,transform] duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100;
 }
 
 @utility btn-primary {
@@ -38,25 +69,74 @@ body {
 }
 
 @utility btn-secondary {
-  @apply btn border border-line bg-white text-ink hover:bg-paper;
+  @apply btn bg-surface text-ink ring-1 ring-line hover:bg-paper;
 }
 
 @utility btn-danger {
-  @apply btn border border-danger/30 bg-white text-danger hover:bg-danger-wash;
+  @apply btn bg-surface text-danger ring-1 ring-danger/30 hover:bg-danger-wash;
 }
 
+@utility btn-ghost {
+  @apply btn bg-transparent text-brand hover:bg-brand-wash;
+}
+
+/* 16px minimum so iOS Safari never zooms into a field */
 @utility field {
-  @apply block w-full rounded-xl border border-line bg-white px-3 py-2.5 text-base outline-none focus:border-brand focus:ring-2 focus:ring-brand/20;
+  @apply block min-h-12 w-full rounded-xl bg-surface px-3.5 py-3 text-base text-ink ring-1 ring-line outline-none placeholder:text-muted/70 focus:ring-2 focus:ring-brand;
 }
 
 @utility label {
-  @apply mb-1 block text-sm font-medium text-ink;
+  @apply mb-1.5 block text-sm font-semibold text-ink;
 }
 
 @utility hint {
-  @apply mt-1 text-xs text-muted;
+  @apply mt-1.5 text-sm text-muted;
 }
 
 @utility pill {
-  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold;
+}
+
+@utility chip {
+  @apply inline-flex min-h-10 shrink-0 items-center justify-center rounded-full bg-surface px-4 text-sm font-semibold text-ink ring-1 ring-line transition-colors aria-[current=true]:bg-ink aria-[current=true]:text-white aria-[current=true]:ring-ink;
+}
+
+@utility scroll-row {
+  @apply -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden;
+}
+
+@utility pad-tabbar {
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 24px);
+}
+
+@utility pad-actionbar {
+  padding-bottom: calc(136px + var(--safe-bottom));
+}
+
+@keyframes sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes lock-in {
+  0% { transform: translateY(-3px); }
+  60% { transform: translateY(1px); }
+  100% { transform: translateY(0); }
+}
+
+@utility animate-sheet {
+  animation: sheet-in 320ms var(--ease-sheet);
+}
+
+@utility animate-fade {
+  animation: fade-in 200ms ease-out;
+}
+
+@utility animate-lock {
+  animation: lock-in 420ms var(--ease-sheet);
 }

@@ -4,6 +4,7 @@ export type Reliability = {
   completed_trips: number;
   passenger_early_cancellations: number;
   passenger_late_cancellations: number;
+  co_driver_late_cancellations: number;
   driver_early_cancellations: number;
   driver_late_cancellations: number;
   driver_changes: number;
@@ -21,6 +22,20 @@ export type PublicUser = {
   women_only_verified: boolean;
   reliability: Reliability;
 };
+
+export type VouchProfile = {
+  received: { id: string; name: string; hometown: string }[];
+  given: { id: string; name: string; hometown: string; late_cancellations_since_vouch: number }[];
+  viewer: {
+    is_authenticated: boolean;
+    is_self: boolean;
+    has_vouched: boolean;
+    can_vouch: boolean;
+    active_given_count: number;
+  };
+};
+
+export type PublicProfile = PublicUser & { vouches: VouchProfile };
 
 export type Me = {
   id: string;
@@ -49,6 +64,17 @@ export type CityPair = {
   typical_duration_hours: number;
 };
 
+export type SeatWanted = {
+  id: number;
+  city_pair_id: number;
+  origin: string;
+  destination: string;
+  travel_date: string;
+  seats: number;
+  flex_days: number;
+  created_at: string;
+};
+
 export type FareQuote = {
   suggested_fare_inr: number;
   max_fare_inr: number;
@@ -68,6 +94,7 @@ export type Ride = {
   code: string;
   origin: string;
   destination: string;
+  distance_km: number;
   departure_at: When;
   expected_arrival_at: When;
   pickup_point: string;
@@ -78,6 +105,7 @@ export type Ride = {
   suggested_fare_inr: number;
   advance_inr: number;
   women_only: boolean;
+  codriver_wanted: boolean;
   notes: string;
   status: "open" | "cancelled" | "departed";
   driver: PublicUser;
@@ -88,7 +116,7 @@ export type Ride = {
   viewer?: {
     is_driver: boolean;
     booking_code: string | null;
-    waitlist: { id: number; status: string; offer_expires_at: When | null } | null;
+    waitlist: { id: number; status: string; role: "passenger" | "co_driver"; offer_expires_at: When | null } | null;
   };
   private?: { driver_phone: string; registration: string; pickup_details: string };
 };
@@ -98,6 +126,9 @@ export type Booking = {
   status: string;
   status_label: string;
   role: "driver" | "passenger";
+  seat_role: "passenger" | "co_driver";
+  seat_role_label: string;
+  co_driver_license_self_attested: boolean;
   ride: Ride;
   ride_code: string;
   passenger: PublicUser;
@@ -126,3 +157,15 @@ export type Booking = {
 };
 
 export type InboxItem = { id: number; kind: string; title: string; body: string; url: string; sent_at: When; read: boolean };
+
+export type TripShareDetails = {
+  driver_name: string;
+  vehicle: { make_model: string; colour: string; registration: string };
+  origin: string;
+  destination: string;
+  pickup_point: string;
+  dropoff_point: string;
+  departure_at: When;
+  expected_arrival_at: When;
+  expires_at: When;
+};

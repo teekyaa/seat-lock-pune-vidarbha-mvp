@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { RouteMark } from "@/components/RouteMark";
+import { TopBar } from "@/components/TopBar";
 import { call } from "@/lib/client";
 
 function LoginForm() {
@@ -13,15 +15,25 @@ function LoginForm() {
   const [devCode, setDevCode] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState(0);
+  const verifying = useRef(false);
 
-  async function requestCode(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait(wait - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+
+  async function requestCode(e?: React.FormEvent) {
+    e?.preventDefault();
     setBusy(true);
     setError("");
     try {
       const r = await call<{ phone: string; debug_code?: string }>("/auth/otp/request", "POST", { phone });
       setSentTo(r.phone);
       setDevCode(r.debug_code ?? null);
+      setCode("");
+      setWait(30);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -29,49 +41,78 @@ function LoginForm() {
     }
   }
 
-  async function verify(e: React.FormEvent) {
-    e.preventDefault();
+  async function verify(value: string) {
+    if (verifying.current) return;
+    verifying.current = true;
     setBusy(true);
     setError("");
     const res = await fetch("/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: sentTo, code }),
+      body: JSON.stringify({ phone: sentTo, code: value }),
     });
     const data = await res.json().catch(() => ({}));
+    verifying.current = false;
     setBusy(false);
-    if (!res.ok) return setError(data.detail ?? "That didn't work. Try again.");
-    router.push(data.user.profile_complete ? next : `/me?next=${encodeURIComponent(next)}`);
+    if (!res.ok) {
+      setCode("");
+      return setError(data.detail ?? "That didn't work. Try again.");
+    }
+    router.replace(data.user.profile_complete ? next : `/me?next=${encodeURIComponent(next)}`);
     router.refresh();
   }
 
+  const digits = phone.replace(/\D/g, "");
+
   return (
-    <div className="mx-auto max-w-sm space-y-4">
-      <h1 className="text-2xl font-bold">Sign in with your phone</h1>
+    <div className="pb-10">
+      <TopBar title="" />
+      <div className="flex items-center gap-4 pb-6 pt-2">
+        <RouteMark origin="Pune" destination="Vidarbha" size="md" />
+        <div>
+          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight">Seat Lock</h1>
+          <p className="text-base text-muted">Carpools between Pune and Vidarbha, with seats that stay booked.</p>
+        </div>
+      </div>
+
       {!sentTo ? (
-        <form onSubmit={requestCode} className="card space-y-3">
-          <label className="label" htmlFor="phone">Mobile number</label>
-          <div className="flex items-center gap-2">
-            <span className="rounded-xl border border-line bg-paper px-3 py-2.5 text-base">+91</span>
-            <input id="phone" className="field" inputMode="numeric" autoComplete="tel-national" placeholder="98765 43210"
-              value={phone} onChange={(e) => setPhone(e.target.value)} required />
+        <form onSubmit={requestCode} className="space-y-4">
+          <div>
+            <label className="label" htmlFor="phone">Your mobile number</label>
+            <div className="flex items-stretch gap-2">
+              <span className="grid min-h-14 place-items-center rounded-xl bg-line/70 px-4 text-lg font-bold">+91</span>
+              <input id="phone" className="field min-h-14 text-lg font-bold tracking-wide" type="tel" inputMode="numeric" autoComplete="tel-national"
+                placeholder="98765 43210" value={phone} maxLength={14} onChange={(e) => setPhone(e.target.value)} autoFocus required />
+            </div>
+            <p className="hint">We send a 6 digit code by SMS. Your number stays private until a seat is confirmed.</p>
           </div>
-          <p className="hint">We&apos;ll send a 6 digit code by SMS. Your number stays private until a seat is confirmed.</p>
-          <button className="btn-primary w-full" disabled={busy}>{busy ? "Sending" : "Send code"}</button>
+          <button className="btn-primary w-full" disabled={busy || digits.length < 10}>{busy ? "Sending code" : "Send code"}</button>
         </form>
       ) : (
-        <form onSubmit={verify} className="card space-y-3">
-          <label className="label" htmlFor="code">Code sent to {sentTo}</label>
-          <input id="code" className="field tracking-[0.4em]" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
-            value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} required autoFocus />
-          {devCode && <p className="hint">Development build: your code is {devCode}.</p>}
-          <button className="btn-primary w-full" disabled={busy || code.length !== 6}>{busy ? "Checking" : "Sign in"}</button>
-          <button type="button" className="btn-secondary w-full" onClick={() => { setSentTo(null); setCode(""); }}>
-            Use a different number
+        <div className="space-y-4">
+          <div>
+            <label className="label" htmlFor="code">Enter the code sent to {sentTo}</label>
+            <input id="code" className="field min-h-14 text-center text-2xl font-extrabold tracking-[0.5em]" inputMode="numeric"
+              autoComplete="one-time-code" maxLength={6} value={code} autoFocus disabled={busy}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+                setCode(v);
+                if (v.length === 6) verify(v); // SMS autofill on iOS and Android fills all six at once
+              }} />
+            {devCode && <p className="hint">Development build: the code is {devCode}.</p>}
+          </div>
+          <button className="btn-primary w-full" disabled={busy || code.length !== 6} onClick={() => verify(code)}>
+            {busy ? "Checking" : "Sign in"}
           </button>
-        </form>
+          <div className="flex justify-between text-sm font-semibold">
+            <button className="min-h-11 text-brand" onClick={() => { setSentTo(null); setCode(""); setError(""); }}>Change number</button>
+            <button className="min-h-11 text-brand disabled:text-muted" disabled={wait > 0 || busy} onClick={() => requestCode()}>
+              {wait > 0 ? `Resend in ${wait}s` : "Resend code"}
+            </button>
+          </div>
+        </div>
       )}
-      {error && <p className="text-sm text-danger" role="alert">{error}</p>}
+      {error && <p className="mt-4 rounded-xl bg-danger-wash p-3 text-sm text-danger" role="alert">{error}</p>}
     </div>
   );
 }

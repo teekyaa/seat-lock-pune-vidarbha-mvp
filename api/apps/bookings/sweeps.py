@@ -72,6 +72,8 @@ def _reoffer(ride_id, now):
         ride = Ride.objects.select_for_update(skip_locked=True).filter(pk=ride_id).first()
         if ride:
             services.offer_waitlist(ride, now)
+    if ride:
+        trust.alert_matching_seat_wanted(ride)
 
 
 def settle_departures(now):

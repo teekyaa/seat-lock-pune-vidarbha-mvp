@@ -10,7 +10,7 @@ self.addEventListener("push", (event) => {
     data.body = event.data ? event.data.text() : "";
   }
   event.waitUntil(
-    self.registration.showNotification(data.title, { body: data.body, icon: "/icon.svg", data: { url: data.url || "/" } }),
+    self.registration.showNotification(data.title, { body: data.body, icon: "/pwa-icon/192", data: { url: data.url || "/" } }),
   );
 });
 

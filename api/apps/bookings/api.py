@@ -1,4 +1,7 @@
+from hashlib import sha256
+
 from django.db.models import Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -9,12 +12,13 @@ from rest_framework.views import APIView
 
 from apps.core.errors import DomainError, Forbidden
 from apps.core.models import CityPair, PolicyVersion
+from apps.core.timefmt import ist
 from apps.rides import services as rides
 from apps.rides.models import Ride
 from apps.trust.models import Report
 
 from . import services
-from .models import Booking, WaitlistEntry
+from .models import Booking, TripShare, WaitlistEntry
 from .presenters import _dt, booking_json, ride_json
 
 
@@ -95,7 +99,8 @@ class RideListView(APIView):
             seats_offered=_int(d, "seats_offered"), fare_inr=_int(d, "fare_inr"),
             pickup_point=str(d.get("pickup_point", "")), dropoff_point=str(d.get("dropoff_point", "")),
             pickup_details=str(d.get("pickup_details", "")), notes=str(d.get("notes", ""))[:500],
-            women_only=bool(d.get("women_only")), duration_hours=d.get("duration_hours") and _int(d, "duration_hours"),
+            women_only=bool(d.get("women_only")), codriver_wanted=bool(d.get("codriver_wanted")),
+            duration_hours=d.get("duration_hours") and _int(d, "duration_hours"),
             policy_ack=bool(d.get("policy_ack")),
         )
         return Response(ride_json(ride, request.user, detail=True), status=status.HTTP_201_CREATED)
@@ -135,11 +140,18 @@ class RideActionView(APIView):
         ride = get_object_or_404(Ride, code=code.upper())
         if action == "request":
             b = services.request_seat(ride, request.user, note=str(request.data.get("note", "")),
-                                      policy_ack=bool(request.data.get("policy_ack")))
+                                      policy_ack=bool(request.data.get("policy_ack")),
+                                      role=str(request.data.get("role", Booking.Role.PASSENGER)),
+                                      co_driver_license_ack=request.data.get("co_driver_license_ack") is True)
             return Response(booking_json(b, request.user), status=status.HTTP_201_CREATED)
         if action == "waitlist":
-            entry = services.join_waitlist(ride, request.user)
-            return Response({"id": entry.pk, "status": entry.status}, status=status.HTTP_201_CREATED)
+            entry = services.join_waitlist(
+                ride, request.user,
+                role=str(request.data.get("role", Booking.Role.PASSENGER)),
+                co_driver_license_ack=request.data.get("co_driver_license_ack") is True,
+            )
+            return Response({"id": entry.pk, "status": entry.status, "role": entry.role},
+                            status=status.HTTP_201_CREATED)
         if action == "cancel":
             ride = services.cancel_ride(ride, request.user)
             return Response(ride_json(ride, request.user, detail=True))
@@ -156,7 +168,7 @@ class RideBookingsView(APIView):
         return Response({
             "bookings": [booking_json(b, request.user) for b in bookings],
             "waitlist": [{"id": w.pk, "passenger": w.passenger.name, "status": w.status,
-                          "offer_expires_at": _dt(w.offer_expires_at)} for w in waitlist],
+                          "offer_expires_at": _dt(w.offer_expires_at), "role": w.role} for w in waitlist],
         })
 
 
@@ -221,6 +233,57 @@ class BookingActionView(APIView):
             return Response(status=status.HTTP_404_NOT_FOUND)
         b.refresh_from_db()
         return Response(booking_json(b, u))
+
+
+class BookingTripShareView(APIView):
+    """Only the passenger can issue or revoke the private emergency-share link."""
+
+    def post(self, request, code):
+        booking = get_object_or_404(Booking.objects.select_related("ride"), code=code.upper())
+        token, expires_at = services.create_trip_share(booking, request.user)
+        return Response({
+            "token": token,
+            "expires_at": {"utc": expires_at.isoformat(), "ist": ist(expires_at)},
+        }, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, code):
+        booking = get_object_or_404(Booking.objects.select_related("ride"), code=code.upper())
+        services.revoke_trip_shares(booking, request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PublicTripShareView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        token_hash = sha256(token.encode("utf-8")).hexdigest()
+        share = TripShare.objects.select_related(
+            "booking", "booking__ride__driver", "booking__ride__vehicle", "booking__ride__city_pair"
+        ).filter(
+            token_hash=token_hash,
+            revoked_at__isnull=True,
+            expires_at__gt=timezone.now(),
+            booking__status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
+        ).first()
+        if share is None:
+            raise Http404
+
+        ride = share.booking.ride
+        return Response({
+            "driver_name": ride.driver.name,
+            "vehicle": {
+                "make_model": ride.vehicle.make_model,
+                "colour": ride.vehicle.colour,
+                "registration": ride.vehicle.registration,
+            },
+            "origin": ride.city_pair.origin,
+            "destination": ride.city_pair.destination,
+            "pickup_point": ride.pickup_point,
+            "dropoff_point": ride.dropoff_point,
+            "departure_at": {"utc": ride.departure_at.isoformat(), "ist": ist(ride.departure_at)},
+            "expected_arrival_at": {"utc": ride.expected_arrival_at.isoformat(), "ist": ist(ride.expected_arrival_at)},
+            "expires_at": {"utc": share.expires_at.isoformat(), "ist": ist(share.expires_at)},
+        })
 
 
 class MyWaitlistView(APIView):

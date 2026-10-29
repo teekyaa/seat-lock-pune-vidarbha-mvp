@@ -13,6 +13,10 @@ The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). Th
   - Ride posting with fair fare suggestion and 15% cap from `city_pairs`, search, server-rendered ride pages with per-ride OG images and WhatsApp share.
   - Full booking flow with row locking, UPI deep link, cancellation tiers, refill refunds, driver cancel with season strikes, reschedule rule, waitlist offers, reconfirmation, trip confirmation, no-show and dispute, refund received and overdue disputes, report and block, women-only (staff-verified), append-only reliability events with a materialised public record.
   - Notification rows + per-minute tick (Celery beat in prod, `manage.py run_scheduler` locally) delivering in-app, email and Web Push.
+  - Passenger-only emergency trip links with hashed tokens, explicit revoke/replace, and expiry 24 hours after expected arrival.
+  - Member vouching with a five-active-vouches-given limit, withdrawal, and late-cancellation attribution on voucher profiles.
+  - Seat-wanted requests with route/date flexibility and deduplicated in-app/email/Web Push match alerts through the notification dispatcher.
+  - Co-driver preference on ride posting, passenger/co-driver request and waitlist roles, licence self-attestation, booking labels, and a separate late-cancellation record. Co-driver verification and fare/legal rules remain open.
   - Django admin ops console: no-show rulings, reports, reliability corrections, women-only verification, policy versions, city pairs, seasons, audit log.
   - 100 pytest tests in `api/tests` (one, the last-seat race, runs only on PostgreSQL).
 - In progress: nothing.
@@ -20,11 +24,12 @@ The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). Th
   - Tests have only run on SQLite so far. Run them against PostgreSQL before relying on the row-locking guarantees.
   - SMS provider not chosen; `ConsoleSMSBackend` only. Needs a DLT-registered provider.
   - City pair distances, tolls and fuel cost are placeholders (`seed_reference_data`).
-  - Photos are a URL field; no object storage. Seat-wanted, vouching, ID verification provider and emergency trip sharing are not built.
+  - Photos are a URL field; no object storage. The ID verification provider is not built. Emergency trip links need a public deployment before they can be shared across devices. Vouches are social context only and do not verify identity or safety.
+  - Co-driver licence claims are self-attested, not verified. Same fare and cancellation treatment is a prototype default; decide public licensing checks, duties, insurance and any discount before launch.
 
 ## Scope
 
-In the MVP: phone OTP signup and profiles, ride posting with fair fare suggestion, WhatsApp share cards, ride search, seat requests and acceptance, UPI advance via deep link, cancellation tiers, reconfirmation messages, waitlist with automatic refill offers, reliability record, post-trip confirmation, women-only rides, report and block.
+In the MVP: phone OTP signup and profiles, ride posting with fair fare suggestion and optional co-driver preference, WhatsApp share cards, ride search, passenger/co-driver seat requests and waitlist, acceptance, UPI advance via deep link, cancellation tiers, reconfirmation messages, waitlist with automatic refill offers, reliability record, post-trip confirmation, women-only rides, report and block. Co-driver verification and public fare/legal decisions remain open.
 
 Not in the MVP (do not build unless asked):
 - Train ticket resale or transfer of any kind
@@ -72,7 +77,7 @@ Exits: `declined` / `expired` (from requested), hold expiry (from accepted, afte
 
 ## Data model (summary)
 
-`users`, `vehicles`, `city_pairs`, `policy_versions`, `seasons`, `rides`, `bookings`, `payments` (records only), `waitlist_entries`, `trip_confirmations`, `reliability_events` (append-only; corrections are new events), `vouches`, `reports`, `blocks`, `seat_wanted`, `notifications`, `audit_log`. The public reliability record is a materialised view over `reliability_events`. Full DDL is in the PRD; the Django models in `api/apps/*/models.py` are the implemented schema.
+`users`, `vehicles`, `city_pairs`, `policy_versions`, `seasons`, `rides` (including co-driver preference), `bookings` (passenger/co-driver role and licence self-attestation timestamp), `payments` (records only), `waitlist_entries` (role preserved), `trip_confirmations`, `reliability_events` (append-only; corrections are new events), `vouches`, `reports`, `blocks`, `seat_wanted`, `notifications`, `audit_log`. The public reliability record is a materialised view over `reliability_events`. Full DDL is in the PRD; the Django models in `api/apps/*/models.py` are the implemented schema.
 
 ## Stack and architecture
 
