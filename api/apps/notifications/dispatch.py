@@ -18,6 +18,10 @@ MAX_ATTEMPTS = 3
 def _still_relevant(n):
     """Messages are written when scheduled; whether they still matter is decided at send time."""
     b = n.booking
+    if n.kind == "seat_wanted_match":
+        from apps.trust.services import seat_wanted_notification_relevant
+
+        return seat_wanted_notification_relevant(n.user, n.ride, n.dedupe_key)
     if n.kind in notify.TRIP_REMINDER_KINDS:
         if b is None or b.status != "confirmed":
             return False

@@ -4,6 +4,7 @@ export function Reliability({ record }: { record: Record }) {
   const rows: [string, number, boolean][] = [
     ["Completed trips", record.completed_trips, false],
     ["Late cancellations as passenger", record.passenger_late_cancellations, true],
+    ["Late cancellations as co-driver", record.co_driver_late_cancellations, true],
     ["Early cancellations as passenger", record.passenger_early_cancellations, false],
     ["Late cancellations as driver", record.driver_late_cancellations, true],
     ["Early cancellations as driver", record.driver_early_cancellations, false],

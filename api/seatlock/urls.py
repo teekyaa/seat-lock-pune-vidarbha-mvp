@@ -5,6 +5,7 @@ from django.urls import include, path
 from apps.accounts import api as accounts
 from apps.bookings import api as bookings
 from apps.notifications import api as notifications
+from apps.trust import api as trust
 
 admin.site.site_header = "Seat Lock ops"
 admin.site.site_title = "Seat Lock ops"
@@ -19,10 +20,14 @@ api = [
     path("me/rides", bookings.MyRidesView.as_view()),
     path("me/bookings", bookings.MyBookingsView.as_view()),
     path("me/waitlist", bookings.MyWaitlistView.as_view()),
+    path("me/seat-wanted", trust.MySeatWantedView.as_view()),
+    path("seat-wanted", trust.MySeatWantedView.as_view()),
     path("me/notifications", notifications.InboxView.as_view()),
     path("push/key", accounts.PushKeyView.as_view()),
     path("push/subscriptions", accounts.PushSubscriptionView.as_view()),
     path("users/<uuid:pk>", accounts.PublicProfileView.as_view()),
+    path("users/<uuid:pk>/vouch", trust.UserVouchView.as_view()),
+    path("seat-wanted/<int:pk>", trust.SeatWantedDetailView.as_view()),
     path("city-pairs", bookings.CityPairsView.as_view()),
     path("fare-quote", bookings.FareQuoteView.as_view()),
     path("policy", bookings.PolicyView.as_view()),
@@ -31,7 +36,9 @@ api = [
     path("rides/<str:code>/bookings", bookings.RideBookingsView.as_view()),
     path("rides/<str:code>/<str:action>", bookings.RideActionView.as_view()),
     path("bookings/<str:code>", bookings.BookingDetailView.as_view()),
+    path("bookings/<str:code>/trip-share", bookings.BookingTripShareView.as_view()),
     path("bookings/<str:code>/<str:action>", bookings.BookingActionView.as_view()),
+    path("trip-shares/<str:token>", bookings.PublicTripShareView.as_view()),
     path("waitlist/<int:pk>/<str:action>", bookings.WaitlistActionView.as_view()),
 ]
 

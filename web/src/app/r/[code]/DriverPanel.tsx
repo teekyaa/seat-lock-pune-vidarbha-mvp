@@ -15,7 +15,7 @@ const ACTIVE = ["requested", "accepted", "advance_claimed", "confirmed"];
 type Pending = { kind: "confirm-advance" | "decline"; booking: Booking } | { kind: "cancel-ride" } | null;
 
 export function DriverPanel({ ride, bookings, waitlist, shareUrl }: {
-  ride: Ride; bookings: Booking[]; waitlist: { id: number; passenger: string; status: string }[]; shareUrl: string;
+  ride: Ride; bookings: Booking[]; waitlist: { id: number; passenger: string; status: string; role?: "passenger" | "co_driver" }[]; shareUrl: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -60,6 +60,7 @@ export function DriverPanel({ ride, bookings, waitlist, shareUrl }: {
             {b.status === "confirmed" ? "Locked" : b.status_label}
           </span>
         </div>
+        {b.seat_role === "co_driver" && <div className="rounded-xl bg-mile-wash p-3 text-sm"><strong>Co-driver</strong><p>{b.co_driver_license_self_attested ? "Licence and willingness to share driving were self-attested; not independently verified." : "Co-driver role selected."}</p><p>Same listed fare and cancellation policy apply.</p></div>}
         {b.note && <p className="rounded-xl bg-paper p-3 text-sm">&ldquo;{b.note}&rdquo;</p>}
         {b.status === "requested" && <p className="text-sm text-muted">Reply by {b.request_expires_at?.ist}</p>}
         {b.status === "accepted" && <p className="text-sm text-muted">Waiting for ₹{b.advance_inr}. Hold ends {b.hold_expires_at?.ist}.</p>}
@@ -108,7 +109,7 @@ export function DriverPanel({ ride, bookings, waitlist, shareUrl }: {
         <section className="card">
           <h2 className="mb-2 text-base font-bold">Waitlist</h2>
           <ol className="list-decimal space-y-1 pl-5 text-sm">
-            {waitlist.map((w) => <li key={w.id}>{w.passenger}{w.status === "offered" && " (offered a seat)"}</li>)}
+            {waitlist.map((w) => <li key={w.id}>{w.passenger}{w.role === "co_driver" && " · co-driver"}{w.status === "offered" && " (offered a seat)"}</li>)}
           </ol>
         </section>
       )}

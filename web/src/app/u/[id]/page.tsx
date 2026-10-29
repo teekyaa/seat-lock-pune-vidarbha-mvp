@@ -2,11 +2,12 @@ import { notFound } from "next/navigation";
 import { Reliability } from "@/components/Reliability";
 import { TopBar } from "@/components/TopBar";
 import { ApiError, api } from "@/lib/server";
-import type { PublicUser } from "@/lib/types";
+import type { PublicProfile } from "@/lib/types";
+import { VouchPanel } from "./VouchPanel";
 
 export default async function ProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let user: PublicUser;
+  let user: PublicProfile;
   try {
     user = await api<PublicUser>(`/users/${encodeURIComponent(id)}`);
   } catch (e) {
@@ -34,6 +35,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
         <p className="mb-4 mt-1 text-sm text-muted">Counted from confirmed bookings only. Our team adds corrections after a review.</p>
         <Reliability record={user.reliability} />
       </section>
+      <VouchPanel userId={user.id} userName={user.name || "this member"} vouches={user.vouches} />
     </div>
   );
 }

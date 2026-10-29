@@ -6,6 +6,7 @@ import { Stepper } from "@/components/Stepper";
 import { ApiError, api, getMe } from "@/lib/server";
 import type { Booking } from "@/lib/types";
 import { BookingActions } from "./BookingActions";
+import { TripShareCard } from "./TripShareCard";
 
 export const metadata = { title: "Booking" };
 
@@ -48,6 +49,7 @@ export default async function BookingPage({ params }: { params: Promise<{ code: 
             <p className="text-sm text-muted">{b.ride.departure_at.ist}</p>
             <p className="text-xl font-extrabold leading-tight">{b.ride.origin} to {b.ride.destination}</p>
             <p className="text-sm text-muted">
+              {b.seat_role === "co_driver" ? "Co-driver booking · same listed fare" : "Passenger booking"}{" · "}
               {b.role === "driver" ? "Passenger" : "Driver"}{" "}
               <Link href={`/u/${other.id}`} className="font-semibold text-ink underline decoration-line underline-offset-4">{other.name}</Link>
             </p>
@@ -77,12 +79,17 @@ export default async function BookingPage({ params }: { params: Promise<{ code: 
         </section>
       )}
 
+      {b.role === "passenger" && ["confirmed", "completed"].includes(b.status) && (
+        <TripShareCard bookingCode={b.code} />
+      )}
+
       <section className="card mt-3">
         <dl className="grid grid-cols-3 gap-3 text-sm">
           <div><dt className="text-muted">Code</dt><dd className="font-bold tracking-wide">{b.code}</dd></div>
           <div><dt className="text-muted">Fare</dt><dd className="font-bold tabular-nums">₹{b.fare_inr}</dd></div>
           <div><dt className="text-muted">Advance</dt><dd className="font-bold tabular-nums">₹{b.advance_inr}</dd></div>
         </dl>
+        {b.seat_role === "co_driver" && <p className="mt-3 rounded-xl bg-paper p-3 text-sm">Licence is self-attested and has not been independently verified. The same fare and cancellation policy apply in this prototype.</p>}
         {b.note && <p className="mt-3 rounded-xl bg-paper p-3 text-sm">&ldquo;{b.note}&rdquo;</p>}
       </section>
 

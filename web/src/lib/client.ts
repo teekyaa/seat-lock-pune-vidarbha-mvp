@@ -14,7 +14,7 @@ export async function call<T = unknown>(path: string, method = "GET", body?: unk
   const data = res.status === 204 ? undefined : await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = data && typeof data === "object" && "detail" in data ? String(data.detail) : firstError(data);
-    throw new Error(detail || "Something went wrong. Please try again.");
+    throw new Error(detail || `Request failed (HTTP ${res.status}). Please try again.`);
   }
   return data as T;
 }

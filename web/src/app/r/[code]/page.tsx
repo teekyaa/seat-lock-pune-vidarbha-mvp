@@ -41,7 +41,7 @@ export default async function RidePage({ params, searchParams }: Props) {
   const [ride, me] = await Promise.all([load(code), getMe()]);
   const isDriver = Boolean(ride.viewer?.is_driver);
   const driverData = isDriver
-    ? await api<{ bookings: Booking[]; waitlist: { id: number; passenger: string; status: string }[] }>(`/rides/${ride.code}/bookings`)
+    ? await api<{ bookings: Booking[]; waitlist: { id: number; passenger: string; status: string; role?: "passenger" | "co_driver" }[] }>(`/rides/${ride.code}/bookings`)
     : null;
   const shareUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/r/${ride.code}`;
   const shareText = `${ride.origin} to ${ride.destination}, ${ride.departure_at.ist}. ₹${ride.fare_inr} a seat, ${ride.seats_left} left. Book on Seat Lock:`;
@@ -78,6 +78,7 @@ export default async function RidePage({ params, searchParams }: Props) {
               </span>
             )}
             {ride.women_only && <span className="pill bg-pink-50 text-pink-800">Women only</span>}
+            {ride.codriver_wanted && <span className="pill bg-mile-wash text-brand">Co-driver wanted</span>}
           </div>
         </div>
       </section>

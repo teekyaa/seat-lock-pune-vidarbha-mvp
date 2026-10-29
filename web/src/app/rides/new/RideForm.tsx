@@ -42,6 +42,7 @@ export function RideForm({ pairs: allPairs, vehicles, policy, womenOnlyEligible 
   const [pickupDetails, setPickupDetails] = useState("");
   const [notes, setNotes] = useState("");
   const [womenOnly, setWomenOnly] = useState(false);
+  const [codriverWanted, setCodriverWanted] = useState(false);
   const [ack, setAck] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -69,7 +70,7 @@ export function RideForm({ pairs: allPairs, vehicles, policy, womenOnlyEligible 
       const ride = await call<Ride>("/rides", "POST", {
         city_pair: pairId, vehicle: vehicleId, seats_offered: seats, departure_at: istInputToIso(departure),
         fare_inr: fare, pickup_point: pickup, dropoff_point: dropoff, pickup_details: pickupDetails, notes,
-        women_only: womenOnly, policy_ack: ack,
+        women_only: womenOnly, codriver_wanted: codriverWanted, policy_ack: ack,
       });
       router.push(`/r/${ride.code}?posted=1`);
     } catch (err) {
@@ -175,6 +176,11 @@ export function RideForm({ pairs: allPairs, vehicles, policy, womenOnlyEligible 
             <label className="label" htmlFor="notes">Anything passengers should know?</label>
             <textarea id="notes" className="field" rows={2} maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="One tea stop near Amravati. Please travel light." />
           </div>
+          <label className="flex min-h-12 items-center gap-3 rounded-xl bg-surface px-4 ring-1 ring-line">
+            <input type="checkbox" checked={codriverWanted} onChange={(e) => setCodriverWanted(e.target.checked)} className="h-5 w-5 accent-brand" />
+            I am looking for a co-driver
+          </label>
+          {codriverWanted && <p className="rounded-xl bg-paper p-3 text-sm text-muted">Co-drivers book a seat and share driving. The same listed fare and cancellation policy apply in this prototype. Licence status is self-attested, not verified.</p>}
           {womenOnlyEligible && (
             <label className="flex min-h-12 items-center gap-3 rounded-xl bg-surface px-4 ring-1 ring-line">
               <input type="checkbox" checked={womenOnly} onChange={(e) => setWomenOnly(e.target.checked)} className="h-5 w-5 accent-brand" />
@@ -192,6 +198,7 @@ export function RideForm({ pairs: allPairs, vehicles, policy, womenOnlyEligible 
               <p className="text-lg font-extrabold">{pair.origin} to {pair.destination}</p>
               <p className="text-sm text-muted">{istLabel(departure)}</p>
               <p className="text-sm text-muted">{seats} seat{seats > 1 ? "s" : ""} at {typeof fare === "number" ? rupees(fare) : ""}, from {pickup}</p>
+              {codriverWanted && <p className="mt-1 text-sm font-semibold text-brand">Co-driver welcome · same fare</p>}
             </div>
           </div>
           <div className="card space-y-3 text-sm">

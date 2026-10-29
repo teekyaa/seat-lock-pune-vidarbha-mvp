@@ -65,6 +65,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
         </Link>
       )}
 
+      <Link href="/seat-wanted" className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-mile-wash p-4 active:bg-mile/30">
+        <span>
+          <span className="block text-sm font-bold">Can&apos;t find a ride?</span>
+          <span className="block text-sm text-muted">Post what you need and get an alert when one matches.</span>
+        </span>
+        <span className="shrink-0 text-sm font-bold text-brand">Set alert</span>
+      </Link>
+
       <section aria-label="Search" className="space-y-3">
         <div className="grid grid-cols-2 gap-1 rounded-2xl bg-line/70 p-1" role="tablist" aria-label="Direction">
           {[

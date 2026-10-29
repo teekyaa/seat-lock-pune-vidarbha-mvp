@@ -27,6 +27,7 @@ export function RideCard({ ride }: { ride: Ride }) {
             {full ? "Full, join waitlist" : `${ride.seats_left} seat${ride.seats_left > 1 ? "s" : ""} left`}
           </span>
           {ride.women_only && <span className="pill bg-pink-50 text-pink-800">Women only</span>}
+          {ride.codriver_wanted && <span className="pill bg-mile-wash text-brand">Co-driver wanted</span>}
           {ride.status === "cancelled" && <span className="pill bg-danger-wash text-danger">Cancelled</span>}
         </div>
         <p className="mt-2 truncate text-sm">

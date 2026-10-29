@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 
 from apps.core.errors import Conflict, DomainError
 from apps.notifications.channels import sms_backend
-from apps.trust.services import reliability_for
+from apps.trust.services import reliability_for, vouch_profile
 
 from .auth import hash_otp, hash_token, issue_token
 from .models import AuthToken, OTPChallenge, PushSubscription, User, Vehicle
@@ -229,4 +229,6 @@ class PublicProfileView(APIView):
         user = User.objects.filter(pk=pk, is_active=True).first()
         if not user:
             return Response(status=status.HTTP_404_NOT_FOUND)
-        return Response(public_user(user))
+        data = public_user(user)
+        data["vouches"] = vouch_profile(user, request.user)
+        return Response(data)

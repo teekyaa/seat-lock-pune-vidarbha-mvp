@@ -9,6 +9,10 @@ def booking_code():
 
 
 class Booking(models.Model):
+    class Role(models.TextChoices):
+        PASSENGER = "passenger", "Passenger"
+        CO_DRIVER = "co_driver", "Co-driver"
+
     class Status(models.TextChoices):
         REQUESTED = "requested", "Requested"
         ACCEPTED = "accepted", "Accepted, awaiting advance"
@@ -40,6 +44,8 @@ class Booking(models.Model):
     ride = models.ForeignKey("rides.Ride", on_delete=models.PROTECT, related_name="bookings")
     passenger = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="bookings")
     policy_version = models.ForeignKey("core.PolicyVersion", on_delete=models.PROTECT, related_name="bookings")
+    role = models.CharField(max_length=12, choices=Role.choices, default=Role.PASSENGER)
+    co_driver_license_confirmed_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.REQUESTED, db_index=True)
     note = models.CharField(max_length=300, blank=True)
 
@@ -82,7 +88,12 @@ class Booking(models.Model):
                 fields=["ride", "passenger"],
                 condition=models.Q(status__in=["requested", "accepted", "advance_claimed", "confirmed"]),
                 name="one_active_booking_per_passenger_ride",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["ride"],
+                condition=models.Q(role="co_driver", status__in=["requested", "accepted", "advance_claimed", "confirmed"]),
+                name="one_active_codriver_per_ride",
+            ),
         ]
 
     def __str__(self):
@@ -129,6 +140,8 @@ class WaitlistEntry(models.Model):
 
     ride = models.ForeignKey("rides.Ride", on_delete=models.CASCADE, related_name="waitlist")
     passenger = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="waitlist_entries")
+    role = models.CharField(max_length=12, choices=Booking.Role.choices, default=Booking.Role.PASSENGER)
+    co_driver_license_confirmed_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.WAITING, db_index=True)
     offered_at = models.DateTimeField(null=True, blank=True)
     offer_expires_at = models.DateTimeField(null=True, blank=True)
@@ -177,3 +190,19 @@ class NoShowCase(models.Model):
     passenger_statement = models.TextField(blank=True, max_length=1000)
     resolved_at = models.DateTimeField(null=True, blank=True)
     resolution_note = models.TextField(blank=True)
+
+
+class TripShare(models.Model):
+    """A revocable, unguessable link for a passenger's trusted emergency contact."""
+
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="trip_shares")
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField(db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Trip share for {self.booking.code}"
