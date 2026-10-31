@@ -52,7 +52,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Sign in with a seeded test number (`9000010001` driver Aditi, `9000010002` passenger Rahul, `9000010003` passenger Neha). With `OTP_DEBUG_ECHO=1` in `api/.env`, the code appears on the sign-in screen and in the API console. No SMS is sent.
+Open http://localhost:3000. Sign in with a seeded test number (`9000010001` driver Aditi, `9000010002` passenger Rahul, `9000010003` passenger Neha). For real SMS, set `TEXTBEE_API_KEY` and `TEXTBEE_DEVICE_ID` in the Git-ignored `api/.env`; Django selects the TextBee backend automatically. With TextBee configured, OTPs are never echoed in API responses or console logs. Without TextBee, local development uses the console backend; `OTP_DEBUG_ECHO=1` can show its code on the sign-in screen. Use Redis for shared OTP limits when running multiple API processes.
 
 ### Tests
 
@@ -96,7 +96,7 @@ The PRD does not decide licence evidence, driving-duty and insurance terms, whet
 
 ## Not ready for real users yet
 
-- **SMS provider not chosen.** OTPs go through a pluggable backend. Production needs a DLT-registered Indian provider wired into `SMS_BACKEND`.
+- **SMS rollout needs validation.** TextBee is integrated as the OTP gateway. Confirm real handset delivery, sender/telecom requirements, and operational monitoring before public use.
 - **Corridor figures are placeholders.** Distances, tolls and fuel cost per km in `seed_reference_data` must be replaced with approved values.
 - **Profile photos** are a URL field only. Object storage is not set up.
 - **ID verification provider** is not built.

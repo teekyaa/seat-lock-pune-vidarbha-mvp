@@ -13,8 +13,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.errors import Conflict, DomainError
-from apps.notifications.channels import sms_backend
+from apps.core.errors import Conflict, DomainError, ServiceUnavailable
+from apps.notifications.channels import SMSDeliveryError, sms_backend
 from apps.trust.services import reliability_for, vouch_profile
 
 from .auth import hash_otp, hash_token, issue_token
@@ -38,8 +38,11 @@ def _rate_limit(key, limit, window):
 
 
 def client_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return forwarded.split(",")[0].strip() or request.META.get("REMOTE_ADDR", "")
+    remote = request.META.get("REMOTE_ADDR", "")
+    if remote in settings.OTP_TRUSTED_PROXY_IPS:
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        return forwarded.split(",")[0].strip() or remote
+    return remote
 
 
 class MeSerializer(serializers.ModelSerializer):
@@ -107,15 +110,29 @@ class OTPRequestView(APIView):
                 {"detail": "Too many codes requested. Please wait 15 minutes and try again.", "code": "rate_limited"},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-        code = f"{secrets.randbelow(1_000_000):06d}"
-        with transaction.atomic():
-            OTPChallenge.objects.filter(phone=phone, consumed_at__isnull=True).update(consumed_at=timezone.now())
-            OTPChallenge.objects.create(
-                phone=phone, code_hash=hash_otp(phone, code),
-                expires_at=timezone.now() + timedelta(seconds=settings.OTP_TTL_SECONDS),
+        cooldown_key = f"otp:cooldown:{phone}"
+        if not cache.add(cooldown_key, 1, settings.OTP_RESEND_COOLDOWN_SECONDS):
+            return Response(
+                {"detail": "Please wait 60 seconds before requesting another code.", "code": "otp_cooldown",
+                 "retry_after": settings.OTP_RESEND_COOLDOWN_SECONDS},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-        sms_backend().send_otp(phone, code)
-        body = {"phone": phone, "expires_in": settings.OTP_TTL_SECONDS}
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        try:
+            with transaction.atomic():
+                challenge = OTPChallenge.objects.create(
+                    phone=phone, code_hash=hash_otp(phone, code),
+                    expires_at=timezone.now() + timedelta(seconds=settings.OTP_TTL_SECONDS),
+                )
+                sms_backend().send_otp(phone, code)
+                OTPChallenge.objects.filter(phone=phone, consumed_at__isnull=True).exclude(pk=challenge.pk).update(
+                    consumed_at=timezone.now()
+                )
+        except SMSDeliveryError:
+            cache.delete(cooldown_key)
+            raise ServiceUnavailable("We couldn't send a code right now. Please try again.", "sms_unavailable") from None
+        body = {"phone": phone, "expires_in": settings.OTP_TTL_SECONDS,
+                "resend_after": settings.OTP_RESEND_COOLDOWN_SECONDS}
         if settings.OTP_DEBUG_ECHO:
             body["debug_code"] = code
         return Response(body)

@@ -22,7 +22,7 @@ The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). Th
 - In progress: nothing.
 - Known issues / not done:
   - Tests have only run on SQLite so far. Run them against PostgreSQL before relying on the row-locking guarantees.
-  - SMS provider not chosen; `ConsoleSMSBackend` only. Needs a DLT-registered provider.
+  - TextBee SMS gateway integrated for OTP when its server-side credentials are configured. Real handset delivery and telecom requirements still need validation.
   - City pair distances, tolls and fuel cost are placeholders (`seed_reference_data`).
   - Photos are a URL field; no object storage. The ID verification provider is not built. Emergency trip links need a public deployment before they can be shared across devices. Vouches are social context only and do not verify identity or safety.
   - Co-driver licence claims are self-attested, not verified. Same fare and cancellation treatment is a prototype default; decide public licensing checks, duties, insurance and any discount before launch.
@@ -125,5 +125,5 @@ Implementation decisions to keep:
 - Source and upkeep of fuel cost and toll figures
 - Whether Maharashtra carpool rules require a licence for a platform that takes no money
 - Co-driver fare discount: fixed or per ride?
-- Which Indian SMS provider (DLT-registered OTP templates)
+- TextBee production rollout: confirm handset delivery, sender/telecom requirements, and monitoring
 - Sign-off on the decisions listed in `docs/PRODUCTION_PLAN.md`

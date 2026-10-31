@@ -29,11 +29,11 @@ function LoginForm() {
     setBusy(true);
     setError("");
     try {
-      const r = await call<{ phone: string; debug_code?: string }>("/auth/otp/request", "POST", { phone });
+      const r = await call<{ phone: string; debug_code?: string; resend_after: number }>("/auth/otp/request", "POST", { phone });
       setSentTo(r.phone);
       setDevCode(r.debug_code ?? null);
       setCode("");
-      setWait(30);
+      setWait(r.resend_after);
     } catch (err) {
       setError((err as Error).message);
     } finally {
