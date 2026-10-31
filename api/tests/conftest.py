@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from django.utils import timezone
@@ -29,9 +30,13 @@ class Clock:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_settings(settings):
-    # Tests never depend on a developer's api/.env
+def _isolate_settings(settings, monkeypatch):
+    # Tests never send SMS or depend on a developer's api/.env.
     settings.OTP_DEBUG_ECHO = False
+    settings.TEXTBEE_API_KEY = ""
+    settings.TEXTBEE_DEVICE_ID = ""
+    settings.OTP_TRUSTED_PROXY_IPS = []
+    monkeypatch.setattr("apps.accounts.api.sms_backend", lambda: SimpleNamespace(send_otp=lambda phone, code: None))
 
 
 @pytest.fixture

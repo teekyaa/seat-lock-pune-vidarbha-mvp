@@ -13,16 +13,22 @@ from django.utils.module_loading import import_string
 log = logging.getLogger(__name__)
 
 
+class SMSDeliveryError(Exception):
+    """The SMS gateway did not accept an OTP for sending."""
+
+
 class ConsoleSMSBackend:
     """Development only: prints the SMS instead of sending it."""
 
     def send_otp(self, phone, code):
+        if not settings.DEBUG:
+            raise SMSDeliveryError("Console SMS is disabled outside development.")
         log.warning("SMS to %s: Your Seat Lock code is %s. It expires in 5 minutes.", phone, code)
 
 
 class UnconfiguredSMSBackend:
     def send_otp(self, phone, code):
-        raise RuntimeError("No SMS provider is configured. Set SMS_BACKEND to a DLT-registered provider.")
+        raise SMSDeliveryError("No SMS provider is configured.")
 
 
 def sms_backend():

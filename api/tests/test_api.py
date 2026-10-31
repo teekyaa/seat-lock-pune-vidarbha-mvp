@@ -7,7 +7,8 @@ from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from apps.accounts.auth import issue_token
-from apps.accounts.models import OTPChallenge
+from apps.accounts.models import AuthToken, OTPChallenge, User
+from apps.notifications.channels import SMSDeliveryError
 
 pytestmark = pytest.mark.django_db
 
@@ -44,6 +45,13 @@ def test_otp_sign_in_creates_user(otp, policy):
     r = c.post("/api/v1/auth/otp/verify", {"phone": "9876543210", "code": code}, format="json")
     assert r.status_code == 400
 
+    # A second OTP signs in the same user rather than creating another account.
+    cache.delete("otp:cooldown:+919876543210")
+    second = c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json")
+    r = c.post("/api/v1/auth/otp/verify", {"phone": "9876543210", "code": second.data["debug_code"]}, format="json")
+    assert r.status_code == 200 and r.data["is_new"] is False
+    assert User.objects.filter(phone="+919876543210").count() == 1
+
 
 def test_otp_wrong_code_locks_after_five(otp, policy):
     c = APIClient()
@@ -60,7 +68,29 @@ def test_otp_send_rate_limited(otp, policy):
     c = APIClient()
     for _ in range(3):
         assert c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json").status_code == 200
+        cache.delete("otp:cooldown:+919876543210")
     assert c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json").status_code == 429
+
+
+def test_otp_resend_cooldown(otp, policy):
+    c = APIClient()
+    first = c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json")
+    second = c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json")
+    assert first.status_code == 200 and first.data["resend_after"] == 60
+    assert second.status_code == 429 and second.data["code"] == "otp_cooldown"
+    assert OTPChallenge.objects.filter(phone="+919876543210").count() == 1
+
+
+def test_otp_ip_limit_ignores_untrusted_forwarding_header(otp, policy, settings):
+    settings.OTP_SENDS_PER_IP = 2
+    c = APIClient()
+    for n in range(2):
+        r = c.post("/api/v1/auth/otp/request", {"phone": f"987654321{n}"}, format="json",
+                   REMOTE_ADDR="192.0.2.1", HTTP_X_FORWARDED_FOR=f"198.51.100.{n}")
+        assert r.status_code == 200
+    r = c.post("/api/v1/auth/otp/request", {"phone": "9876543212"}, format="json",
+               REMOTE_ADDR="192.0.2.1", HTTP_X_FORWARDED_FOR="198.51.100.3")
+    assert r.status_code == 429 and r.data["code"] == "rate_limited"
 
 
 def test_otp_expires(otp, policy, clock):
@@ -69,6 +99,39 @@ def test_otp_expires(otp, policy, clock):
     clock.advance(minutes=6)
     r = c.post("/api/v1/auth/otp/verify", {"phone": "9876543210", "code": code}, format="json")
     assert r.data["code"] == "otp_expired"
+
+
+def test_otp_send_failure_preserves_previous_code(otp, policy, monkeypatch):
+    c = APIClient()
+    first = c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json")
+    cache.delete("otp:cooldown:+919876543210")
+
+    def unavailable(phone, code):
+        raise SMSDeliveryError("provider details must stay private")
+
+    from types import SimpleNamespace
+    monkeypatch.setattr("apps.accounts.api.sms_backend", lambda: SimpleNamespace(send_otp=unavailable))
+    failed = c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json")
+    assert failed.status_code == 503 and failed.data["code"] == "sms_unavailable"
+    assert "provider details" not in str(failed.data)
+    assert OTPChallenge.objects.filter(phone="+919876543210").count() == 1
+    assert cache.get("otp:cooldown:+919876543210") is None
+    verified = c.post("/api/v1/auth/otp/verify", {"phone": "9876543210", "code": first.data["debug_code"]}, format="json")
+    assert verified.status_code == 200
+
+
+def test_otp_session_persists_and_logout_revokes_token(otp, policy):
+    c = APIClient()
+    sent = c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json")
+    verified = c.post("/api/v1/auth/otp/verify", {"phone": "9876543210", "code": sent.data["debug_code"]}, format="json")
+    raw_token = verified.data["token"]
+    session = APIClient()
+    session.credentials(HTTP_AUTHORIZATION=f"Bearer {raw_token}")
+    assert session.get("/api/v1/me").status_code == 200
+    assert APIClient().get("/api/v1/me").status_code == 401
+    assert session.post("/api/v1/auth/logout").status_code == 204
+    assert session.get("/api/v1/me").status_code == 401
+    assert not AuthToken.objects.filter(user__phone="+919876543210").exists()
 
 
 def test_no_debug_code_unless_enabled(policy):

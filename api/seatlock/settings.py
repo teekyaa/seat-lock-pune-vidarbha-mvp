@@ -145,11 +145,25 @@ OTP_MAX_ATTEMPTS = 5
 OTP_SENDS_PER_PHONE = 3  # per OTP_SEND_WINDOW_SECONDS
 OTP_SENDS_PER_IP = 10
 OTP_SEND_WINDOW_SECONDS = 900
-# Echo the OTP in the API response. Only ever for local development.
-OTP_DEBUG_ECHO = DEBUG and env_bool("OTP_DEBUG_ECHO", False)
+OTP_RESEND_COOLDOWN_SECONDS = 60
+# Only trust forwarding headers from explicitly configured reverse proxies.
+OTP_TRUSTED_PROXY_IPS = env_list("OTP_TRUSTED_PROXY_IPS")
 
 # Messaging
-SMS_BACKEND = env("SMS_BACKEND", "apps.notifications.channels.ConsoleSMSBackend")
+TEXTBEE_API_KEY = env("TEXTBEE_API_KEY", "")
+TEXTBEE_DEVICE_ID = env("TEXTBEE_DEVICE_ID", "")
+SMS_BACKEND = env("SMS_BACKEND") or (
+    "apps.notifications.textbee.TextBeeSMSBackend"
+    if TEXTBEE_API_KEY or TEXTBEE_DEVICE_ID
+    else "apps.notifications.channels.ConsoleSMSBackend" if DEBUG
+    else "apps.notifications.channels.UnconfiguredSMSBackend"
+)
+# Never return a code when a real SMS gateway is configured, even in DEBUG.
+OTP_DEBUG_ECHO = (
+    DEBUG and env_bool("OTP_DEBUG_ECHO", False)
+    and SMS_BACKEND == "apps.notifications.channels.ConsoleSMSBackend"
+    and not (TEXTBEE_API_KEY or TEXTBEE_DEVICE_ID)
+)
 EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 EMAIL_HOST = env("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(env("EMAIL_PORT", "587"))

@@ -138,7 +138,7 @@ Likelihood/impact are qualitative planning estimates, not measured incident rate
 
 | Area | Now in `api/` + `web/` | Still open |
 | --- | --- | --- |
-| US-01/02/03 Sign-up, profile, car, UPI | Phone OTP with limits, profile completion with terms acceptance, saved cars, validated UPI ID | Real SMS provider, photo upload/storage, consent and retention policy |
+| US-01/02/03 Sign-up, profile, car, UPI | Phone OTP with limits, TextBee gateway integration, profile completion with terms acceptance, saved cars, validated UPI ID | Real handset delivery test, telecom requirements, photo upload/storage, consent and retention policy |
 | US-04/05 Post ride, fair fare | 6 h lead time, seats capped by car, fare suggestion from `city_pairs` and 15% server-side cap; driver can mark a co-driver wanted | Approved distance/toll/fuel figures; legal review of the cap; co-driver licensing, responsibilities, fare treatment, and seat accounting for public use |
 | US-06 WhatsApp card | Server-rendered `/r/<code>` with per-ride OG image | Needs a public deployment to be useful |
 | US-08 to US-11 Request, accept, UPI, confirm | Passenger/co-driver request role persists through waitlist, booking, and cancellation; co-driver self-attests to licence and shared driving; same fare/policy in prototype | Verify licence and define driver duties, insurance/legal terms, fare discount, and record treatment before public use; run the last-seat race test on PostgreSQL |
