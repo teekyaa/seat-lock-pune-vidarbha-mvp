@@ -9,7 +9,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   let user: PublicProfile;
   try {
-    user = await api<PublicUser>(`/users/${encodeURIComponent(id)}`);
+    user = await api<PublicProfile>(`/users/${encodeURIComponent(id)}`);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;

@@ -105,7 +105,7 @@ export function RideActions({ ride, signedIn, profileComplete }: { ride: Ride; s
           });
         }}>
           {isWaitlist ? (
-            <p className="text-sm text-muted">We'll offer you a seat if one opens. You'll have a limited time to accept; joining the waitlist does not reserve a seat.</p>
+            <p className="text-sm text-muted">We&apos;ll offer you a seat if one opens. You&apos;ll have a limited time to accept; joining the waitlist does not reserve a seat.</p>
           ) : (
             <ol className="space-y-3">
               {[
