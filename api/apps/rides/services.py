@@ -24,7 +24,7 @@ def fare_quote(city_pair: CityPair, seats_offered: int, policy: PolicyVersion | 
         "fuel_cost_per_km": str(policy.fuel_cost_per_km),
         "seats_offered": seats_offered,
         "suggested_fare_inr": suggested,
-        "max_fare_inr": calc.max_fare(suggested, policy.fare_cap_percent),
+        "max_fare_inr": calc.conservative_fare_cap(city_pair.distance_km, city_pair.tolls_inr, seats_offered, policy.fuel_cost_per_km, policy.fare_allowance_inr),
         "advance_inr": advance_for(suggested, policy),
         "policy_version": policy.label,
     }
@@ -38,6 +38,8 @@ def advance_for(fare_inr, policy):
 
 def availability(ride: Ride):
     """Seats left after holds and open waitlist offers. Holds reserve a seat (plan decision 1)."""
+    if hasattr(ride, "seats_held") and hasattr(ride, "offers_open"):
+        return max(0, ride.seats_offered - ride.seats_held - ride.offers_open)
     now = timezone.now()
     held = ride.bookings.filter(status__in=HOLDING).count()
     offers = ride.waitlist.filter(status="offered", offer_expires_at__gt=now).count()
@@ -87,7 +89,7 @@ def create_ride(driver, *, city_pair, vehicle, departure_at, seats_offered, fare
         raise DomainError("Enter a fare in rupees.")
     if fare_inr > quote["max_fare_inr"]:
         raise DomainError(
-            f"Fares stay cost-sharing. The most you can ask for this trip is Rs {quote['max_fare_inr']} a seat.",
+            f"The maximum fare for this trip is Rs {quote['max_fare_inr']} a seat.",
             "fare_above_cap",
         )
     duration = duration_hours or city_pair.typical_duration_hours

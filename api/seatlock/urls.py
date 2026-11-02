@@ -1,5 +1,11 @@
 from django.contrib import admin
 from django.http import JsonResponse
+from django.conf import settings
+from django.db import connection
+from django.core.cache import cache
+from uuid import uuid4
+from django.http import Http404
+import os
 from django.urls import include, path
 
 from apps.accounts import api as accounts
@@ -9,6 +15,28 @@ from apps.trust import api as trust
 
 admin.site.site_header = "Seat Lock ops"
 admin.site.site_title = "Seat Lock ops"
+
+
+def loadtest_guard(request):
+    if not (settings.DEBUG and os.environ.get('SEATLOCK_LOADTEST_MODE') == 'yes' and
+            connection.vendor == 'postgresql' and connection.settings_dict['NAME'] == 'seatlock_loadtest'):
+        raise Http404
+    return JsonResponse({'synthetic_load_test': True})
+
+
+def readiness(request):
+    key = f'readiness:{uuid4().hex}'
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+        cache.set(key, 'ok', timeout=10)
+        if cache.get(key) != 'ok':
+            raise RuntimeError('Cache probe failed')
+        cache.delete(key)
+    except Exception:
+        return JsonResponse({'ready': False}, status=503)
+    return JsonResponse({'ready': True})
 
 api = [
     path("auth/otp/request", accounts.OTPRequestView.as_view()),
@@ -45,5 +73,7 @@ api = [
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("healthz", lambda request: JsonResponse({"ok": True})),
+    path("readyz", readiness),
+    path("internal/loadtest-guard", loadtest_guard),
     path("api/v1/", include(api)),
 ]

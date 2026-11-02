@@ -39,6 +39,8 @@ DEBUG = env_bool("DJANGO_DEBUG", False)
 SECRET_KEY = env("DJANGO_SECRET_KEY") or ("dev-insecure-secret-key" if DEBUG else None)
 if not SECRET_KEY:
     raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is off.")
+if not DEBUG and (len(SECRET_KEY) < 50 or SECRET_KEY == "change-me"):
+    raise RuntimeError("Production requires a strong DJANGO_SECRET_KEY of at least 50 characters.")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
@@ -97,6 +99,8 @@ DATABASES = {
         conn_max_age=int(env("DB_CONN_MAX_AGE", "60")),
     )
 }
+if not DEBUG and DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
+    raise RuntimeError("Production requires a PostgreSQL DATABASE_URL.")
 
 AUTH_USER_MODEL = "accounts.User"
 AUTH_PASSWORD_VALIDATORS = [
@@ -116,8 +120,11 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+DATA_UPLOAD_MAX_MEMORY_SIZE = 65536
 
 REDIS_URL = env("REDIS_URL")
+if not DEBUG and not REDIS_URL:
+    raise RuntimeError("Production requires REDIS_URL for shared rate limiting and background jobs.")
 if REDIS_URL:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": REDIS_URL}}
 else:
@@ -142,6 +149,8 @@ CELERY_BEAT_SCHEDULE = {
 AUTH_TOKEN_TTL_DAYS = int(env("AUTH_TOKEN_TTL_DAYS", "30"))
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
+OTP_VERIFY_ATTEMPTS_PER_IP = 30
+OTP_VERIFY_WINDOW_SECONDS = 900
 OTP_SENDS_PER_PHONE = 3  # per OTP_SEND_WINDOW_SECONDS
 OTP_SENDS_PER_IP = 10
 OTP_SEND_WINDOW_SECONDS = 900
@@ -167,6 +176,7 @@ OTP_DEBUG_ECHO = (
 EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 EMAIL_HOST = env("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(env("EMAIL_PORT", "587"))
+EMAIL_TIMEOUT = 10
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
@@ -179,7 +189,8 @@ VAPID_SUBJECT = env("VAPID_SUBJECT", "mailto:ops@seatlock.local")
 WEB_BASE_URL = env("WEB_BASE_URL", "http://localhost:3000")
 
 if not DEBUG:
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    if env_bool("DJANGO_TRUST_PROXY_HEADERS", False):
+        SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", True)
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True

@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PushToggle } from "@/components/PushToggle";
 import { ConfirmSheet, Sheet } from "@/components/Sheet";
 import { call } from "@/lib/client";
+import { safeRedirect } from "@/lib/safe-redirect";
 import type { Me, Vehicle } from "@/lib/types";
 
 const TOWNS = ["Nagpur", "Wardha", "Chandrapur", "Amravati", "Yavatmal", "Akola", "Pune", "Other"];
@@ -54,7 +55,7 @@ export function ProfileForm({ me, vehicles, next }: { me: Me; vehicles: Vehicle[
     e.preventDefault();
     await run(async () => {
       const updated = await call<Me>("/me", "PATCH", { ...form, accept_terms: accept });
-      if (updated.profile_complete && next) router.push(next);
+      if (updated.profile_complete && next) router.push(safeRedirect(next));
     }, "Saved");
   }
 

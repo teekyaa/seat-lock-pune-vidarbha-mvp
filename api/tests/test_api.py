@@ -198,17 +198,19 @@ def test_other_users_cannot_see_booking(ride, rahul, neha):
 def test_post_ride_with_fare_cap(driver, car, pair, policy, clock):
     c = client_for(driver)
     quote = c.get(f"/api/v1/fare-quote?city_pair={pair.pk}&seats=3").data
-    assert quote["suggested_fare_inr"] == 1555 and quote["max_fare_inr"] == 1788
+    assert quote["suggested_fare_inr"] == 1555 and quote["max_fare_inr"] == 1036
     dep = (clock.now + timedelta(days=3)).isoformat()
     payload = {"city_pair": pair.pk, "vehicle": car.pk, "departure_at": dep, "seats_offered": 3,
                "fare_inr": 2000, "pickup_point": "Swargate", "dropoff_point": "Sitabuldi", "policy_ack": True}
     r = c.post("/api/v1/rides", payload, format="json")
     assert r.status_code == 400 and r.data["code"] == "fare_above_cap"
-    payload["fare_inr"] = 1600
+    payload["fare_inr"] = 1037
+    assert c.post("/api/v1/rides", payload, format="json").status_code == 400
+    payload["fare_inr"] = 1036
     r = c.post("/api/v1/rides", payload, format="json")
     assert r.status_code == 201
     assert re.fullmatch(r"[A-Z2-9]{6}", r.data["code"])
-    assert r.data["advance_inr"] == 500
+    assert r.data["advance_inr"] == 300
 
 
 def test_naive_departure_rejected(driver, car, pair, policy):

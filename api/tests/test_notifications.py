@@ -84,3 +84,28 @@ def test_tick_is_idempotent(ride, rahul, confirm, clock):
     before = Notification.objects.filter(status=N.SENT).count()
     run_tick(clock.now)
     assert Notification.objects.filter(status=N.SENT).count() == before
+
+
+def test_failed_delivery_is_retried_without_repeating_successful_channel(rahul, clock, monkeypatch):
+    attempts = []
+    def email(_):
+        attempts.append('email')
+        if attempts.count('email') == 1:
+            raise TimeoutError('sensitive provider information')
+        return True
+    def push(_):
+        attempts.append('push')
+        return True
+    monkeypatch.setattr('apps.notifications.channels.send_email', email)
+    monkeypatch.setattr('apps.notifications.channels.send_push', push)
+    row = Notification.objects.create(user=rahul, kind='test', title='Test', send_at=clock.now)
+    dispatch_due(clock.now)
+    row.refresh_from_db()
+    assert row.status == N.SENT and row.next_retry_at is not None
+    assert 'sensitive' not in row.last_error
+    assert set(row.channels_sent) == {'in_app', 'push'}
+    clock.advance(minutes=1)
+    dispatch_due(clock.now)
+    row.refresh_from_db()
+    assert row.next_retry_at is None and not row.last_error
+    assert attempts == ['email', 'push', 'email']

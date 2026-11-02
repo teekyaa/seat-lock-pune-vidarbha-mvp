@@ -10,7 +10,7 @@ The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). Th
 
 - Built so far:
   - Phone OTP sign-in (hashed codes, 5 min expiry, 5 tries, per-phone and per-IP send limits), bearer tokens kept in an httpOnly cookie by the web app, profiles, saved cars, UPI ID.
-  - Ride posting with fair fare suggestion and 15% cap from `city_pairs`, search, server-rendered ride pages with per-ride OG images and WhatsApp share.
+  - Ride posting with a maximum fare derived from `city_pairs` and estimated contribution limits, search, server-rendered ride pages with per-ride OG images and WhatsApp share.
   - Full booking flow with row locking, UPI deep link, cancellation tiers, refill refunds, driver cancel with season strikes, reschedule rule, waitlist offers, reconfirmation, trip confirmation, no-show and dispute, refund received and overdue disputes, report and block, women-only (staff-verified), append-only reliability events with a materialised public record.
   - Notification rows + per-minute tick (Celery beat in prod, `manage.py run_scheduler` locally) delivering in-app, email and Web Push.
   - Passenger-only emergency trip links with hashed tokens, explicit revoke/replace, and expiry 24 hours after expected arrival.
@@ -40,7 +40,7 @@ Not in the MVP (do not build unless asked):
 ## Hard rules
 
 1. **The app never holds money.** It generates UPI deep links (`upi://pay?pa=…&pn=…&am=…&cu=INR&tn=<booking code>`) and records claims ("I've paid", "Advance received", "Refund received"). No gateway integration.
-2. **Fares stay cost-sharing.** Suggested fare = (distance_km × fuel_cost_per_km + tolls) ÷ (seats offered + 1). Driver may go at most 15% above it. Distance and tolls come from the `city_pairs` table, not a maps API.
+2. **Fare cap is a provisional product rule, not a legal determination.** The maximum is the lowest of estimated fair share plus the configured allowance, 25% of estimated trip cost, and 50% divided by seats offered, rounded down. Distance and tolls come from `city_pairs`; legal review and approved cost data are required.
 3. **Contact details are private until confirmation.** Phone numbers, UPI IDs and car registration are visible only to confirmed co-travellers on the same ride.
 4. **Never store ID numbers.** ID verification stores only result, provider and date.
 5. **Every booking stores its `policy_version_id`.** Policy changes never apply retroactively.

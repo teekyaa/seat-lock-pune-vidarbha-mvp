@@ -24,10 +24,21 @@ from .presenters import _dt, booking_json, ride_json
 
 def _int(data, name, default=None):
     value = data.get(name, default)
+    if isinstance(value, bool) or isinstance(value, float):
+        raise DomainError(f"Enter a whole number for {name.replace('_', ' ')}.")
     try:
         return int(value)
     except (TypeError, ValueError):
         raise DomainError(f"Enter a whole number for {name.replace('_', ' ')}.")
+
+
+def _bool(data, name, default=False, *, required=False):
+    if required and name not in data:
+        raise DomainError(f"Enter true or false for {name.replace('_', ' ')}.")
+    value = data.get(name, default)
+    if not isinstance(value, bool):
+        raise DomainError(f"Enter true or false for {name.replace('_', ' ')}.")
+    return value
 
 
 def _datetime(value):
@@ -99,9 +110,9 @@ class RideListView(APIView):
             seats_offered=_int(d, "seats_offered"), fare_inr=_int(d, "fare_inr"),
             pickup_point=str(d.get("pickup_point", "")), dropoff_point=str(d.get("dropoff_point", "")),
             pickup_details=str(d.get("pickup_details", "")), notes=str(d.get("notes", ""))[:500],
-            women_only=bool(d.get("women_only")), codriver_wanted=bool(d.get("codriver_wanted")),
+            women_only=_bool(d, "women_only"), codriver_wanted=_bool(d, "codriver_wanted"),
             duration_hours=d.get("duration_hours") and _int(d, "duration_hours"),
-            policy_ack=bool(d.get("policy_ack")),
+            policy_ack=_bool(d, "policy_ack"),
         )
         return Response(ride_json(ride, request.user, detail=True), status=status.HTTP_201_CREATED)
 
@@ -140,7 +151,7 @@ class RideActionView(APIView):
         ride = get_object_or_404(Ride, code=code.upper())
         if action == "request":
             b = services.request_seat(ride, request.user, note=str(request.data.get("note", "")),
-                                      policy_ack=bool(request.data.get("policy_ack")),
+                                      policy_ack=_bool(request.data, "policy_ack"),
                                       role=str(request.data.get("role", Booking.Role.PASSENGER)),
                                       co_driver_license_ack=request.data.get("co_driver_license_ack") is True)
             return Response(booking_json(b, request.user), status=status.HTTP_201_CREATED)
@@ -210,9 +221,9 @@ class BookingActionView(APIView):
         elif action == "cancel":
             services.cancel_by_passenger(b, u)
         elif action == "reconfirm":
-            services.reconfirm(b, u, _int(d, "stage_hours"), bool(d.get("coming")))
+            services.reconfirm(b, u, _int(d, "stage_hours"), _bool(d, "coming", required=True))
         elif action == "trip-confirmation":
-            services.confirm_trip(b, u, bool(d.get("happened")))
+            services.confirm_trip(b, u, _bool(d, "happened", required=True))
         elif action == "no-show":
             services.mark_no_show(b, u)
         elif action == "dispute-no-show":
@@ -298,7 +309,7 @@ class WaitlistActionView(APIView):
     def post(self, request, pk, action):
         entry = get_object_or_404(WaitlistEntry, pk=pk)
         if action == "accept":
-            b = services.accept_waitlist_offer(entry, request.user, policy_ack=bool(request.data.get("policy_ack")))
+            b = services.accept_waitlist_offer(entry, request.user, policy_ack=_bool(request.data, "policy_ack"))
             return Response(booking_json(b, request.user), status=status.HTTP_201_CREATED)
         if action == "withdraw":
             services.withdraw_waitlist(entry, request.user)

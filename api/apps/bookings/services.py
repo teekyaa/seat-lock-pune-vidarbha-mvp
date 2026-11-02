@@ -38,11 +38,11 @@ def _now():
 
 
 def _lock_ride(ride_id):
-    return Ride.objects.select_for_update().select_related("city_pair", "driver", "policy_version").get(pk=ride_id)
+    return Ride.objects.select_for_update(of=("self",)).select_related("city_pair", "driver", "policy_version").get(pk=ride_id)
 
 
 def _lock_booking(booking_id):
-    return Booking.objects.select_for_update().select_related(
+    return Booking.objects.select_for_update(of=("self",)).select_related(
         "ride", "ride__driver", "ride__city_pair", "passenger", "policy_version"
     ).get(pk=booking_id)
 
@@ -269,6 +269,8 @@ def confirm_advance(booking, driver):
         _require_driver(booking, driver)
         if booking.status not in (S.ACCEPTED, S.ADVANCE_CLAIMED):
             raise Conflict("This booking is not waiting for an advance.")
+        if booking.status == S.ACCEPTED and booking.hold_expires_at and booking.hold_expires_at <= now:
+            raise Conflict("This hold has lapsed. Request the seat again if it is still free.", "hold_expired")
         if ride.status != Ride.Status.OPEN:
             raise Conflict("This ride is no longer open.")
         if ride.bookings.filter(status=S.CONFIRMED).exclude(pk=booking.pk).count() >= ride.seats_offered:

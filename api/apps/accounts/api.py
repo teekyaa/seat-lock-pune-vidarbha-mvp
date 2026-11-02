@@ -22,6 +22,8 @@ from .models import AuthToken, OTPChallenge, PushSubscription, User, Vehicle
 
 
 def normalise_phone(raw):
+    if not isinstance(raw, str):
+        raise DomainError("Enter a 10 digit Indian mobile number.", "invalid_phone")
     digits = re.sub(r"\D", "", raw or "")
     if len(digits) == 10:
         digits = "91" + digits
@@ -142,6 +144,10 @@ class OTPVerifyView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if not _rate_limit(f"otp:verify:ip:{client_ip(request)}", settings.OTP_VERIFY_ATTEMPTS_PER_IP,
+                           settings.OTP_VERIFY_WINDOW_SECONDS):
+            return Response({"detail": "Too many verification attempts. Please try again later.",
+                             "code": "rate_limited"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         phone = normalise_phone(request.data.get("phone"))
         code = str(request.data.get("code", "")).strip()
         error = None
@@ -227,8 +233,11 @@ class PushSubscriptionView(APIView):
     def post(self, request):
         keys = request.data.get("keys") or {}
         endpoint = request.data.get("endpoint")
-        if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+        from apps.notifications.channels import valid_push_endpoint
+        if not isinstance(keys, dict) or not valid_push_endpoint(endpoint) or not keys.get("p256dh") or not keys.get("auth"):
             raise DomainError("That push subscription is incomplete.")
+        if PushSubscription.objects.filter(endpoint=endpoint).exclude(user=request.user).exists():
+            raise Forbidden("That push subscription belongs to another account.")
         PushSubscription.objects.update_or_create(
             endpoint=endpoint, defaults={"user": request.user, "p256dh": keys["p256dh"], "auth": keys["auth"]}
         )

@@ -1,7 +1,9 @@
 """Claim due notification rows with SKIP LOCKED, send, mark sent."""
 import logging
+from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.timefmt import ist
@@ -11,7 +13,7 @@ from . import services as notify
 from .models import Notification
 
 log = logging.getLogger(__name__)
-BATCH = 50
+BATCH = 1
 MAX_ATTEMPTS = 3
 
 
@@ -61,14 +63,16 @@ def _reconfirm_48_check(n):
 
 
 def _deliver(n):
-    errors, sent = [], ["in_app"]
+    errors, sent = [], list(set(n.channels_sent) | {"in_app"})
     for name, fn in (("email", channels.send_email), ("push", channels.send_push)):
+        if name in sent:
+            continue
         try:
             if fn(n):
                 sent.append(name)
-        except Exception as exc:  # one channel failing must not block the others
-            errors.append(f"{name}: {exc}")
-            log.exception("Notification %s failed on %s", n.pk, name)
+        except Exception:  # Do not log provider responses or destination data.
+            errors.append(f"{name}: delivery failed")
+            log.warning("Notification %s failed on %s", n.pk, name)
     return sent, errors
 
 
@@ -79,7 +83,8 @@ def dispatch_due(now=None):
         with transaction.atomic():
             rows = list(
                 Notification.objects.select_for_update(skip_locked=True, of=("self",))
-                .filter(status=Notification.Status.PENDING, send_at__lte=now)
+                .filter(Q(status=Notification.Status.PENDING, send_at__lte=now) |
+                        Q(status=Notification.Status.SENT, next_retry_at__lte=now))
                 .select_related("user", "booking", "booking__ride", "booking__passenger")
                 .order_by("send_at")[:BATCH]
             )
@@ -89,8 +94,10 @@ def dispatch_due(now=None):
                 processed += 1
                 n.attempts += 1
                 if not _still_relevant(n):
-                    n.status = Notification.Status.SKIPPED
-                    n.save(update_fields=["status", "attempts"])
+                    if n.status == Notification.Status.PENDING:
+                        n.status = Notification.Status.SKIPPED
+                    n.next_retry_at = None
+                    n.save(update_fields=["status", "attempts", "next_retry_at"])
                     continue
                 if n.kind == "reconfirm_48_check":
                     _reconfirm_48_check(n)
@@ -102,5 +109,6 @@ def dispatch_due(now=None):
                 n.channels_sent = sent
                 n.last_error = "\n".join(errors)
                 n.status = Notification.Status.SENT
-                n.sent_at = now
-                n.save(update_fields=["status", "attempts", "sent_at", "channels_sent", "last_error"])
+                n.sent_at = n.sent_at or now
+                n.next_retry_at = now + timedelta(minutes=2 ** (n.attempts - 1)) if errors and n.attempts < MAX_ATTEMPTS else None
+                n.save(update_fields=["status", "attempts", "sent_at", "channels_sent", "last_error", "next_retry_at"])

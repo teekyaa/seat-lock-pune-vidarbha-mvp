@@ -200,12 +200,12 @@ def test_fare_above_cap_rejected(driver, car, pair, policy, clock):
 
     with pytest.raises(DomainError) as exc:
         create_ride(driver, city_pair=pair, vehicle=car, departure_at=clock.now + timedelta(days=3),
-                    seats_offered=3, fare_inr=1789, pickup_point="A", dropoff_point="B", policy_ack=True)
+                    seats_offered=3, fare_inr=1037, pickup_point="A", dropoff_point="B", policy_ack=True)
     assert exc.value.code == "fare_above_cap"
     ride = create_ride(driver, city_pair=pair, vehicle=car, departure_at=clock.now + timedelta(days=3),
-                       seats_offered=3, fare_inr=1788, pickup_point="A", dropoff_point="B", policy_ack=True)
+                       seats_offered=3, fare_inr=1036, pickup_point="A", dropoff_point="B", policy_ack=True)
     assert ride.suggested_fare_inr == 1555
-    assert ride.advance_inr == 550  # 30% of 1788 = 536.4 -> 550
+    assert ride.advance_inr == 300
 
 
 def test_posting_needs_6h_lead(driver, car, pair, policy, clock):

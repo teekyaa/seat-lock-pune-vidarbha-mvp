@@ -50,15 +50,18 @@ export function RideForm({ pairs: allPairs, vehicles, policy, womenOnlyEligible 
 
   useEffect(() => {
     if (!pairId || !seats) return;
+    let active = true;
+    setQuote(null);
     call<FareQuote>(`/fare-quote?city_pair=${pairId}&seats=${seats}`)
-      .then((q) => { setQuote(q); setFare((f) => (f === "" || f > q.max_fare_inr ? q.suggested_fare_inr : f)); })
-      .catch(() => setQuote(null));
+      .then((q) => { if (active) setQuote(q); })
+      .catch(() => { if (active) setQuote(null); });
+    return () => { active = false; };
   }, [pairId, seats]);
 
   const overCap = Boolean(quote && typeof fare === "number" && fare > quote.max_fare_inr);
   const valid = [
     Boolean(pairId && departure),
-    Boolean(vehicleId && seats && fare !== "" && !overCap),
+    Boolean(vehicleId && seats && quote && fare !== "" && Number.isInteger(fare) && fare >= 0 && !overCap),
     Boolean(pickup.trim() && dropoff.trim()),
     ack,
   ];
@@ -136,10 +139,10 @@ export function RideForm({ pairs: allPairs, vehicles, policy, womenOnlyEligible 
           </div>
           {quote && (
             <div className="rounded-2xl bg-brand-wash p-4">
-              <p className="text-sm text-brand">Fair share for each person</p>
-              <p className="text-3xl font-extrabold tabular-nums text-brand">{rupees(quote.suggested_fare_inr)}</p>
+              <p className="text-sm text-brand">Maximum allowed fare</p>
+              <p className="text-3xl font-extrabold tabular-nums text-brand">{rupees(quote.max_fare_inr)}</p>
               <p className="mt-1 text-sm text-muted">
-                {quote.distance_km} km at ₹{quote.fuel_cost_per_km}/km plus {rupees(quote.tolls_inr)} tolls, split {quote.seats_offered + 1} ways including you.
+                Based on {quote.distance_km} km at ₹{quote.fuel_cost_per_km}/km and {rupees(quote.tolls_inr)} estimated tolls.
               </p>
             </div>
           )}
@@ -151,7 +154,7 @@ export function RideForm({ pairs: allPairs, vehicles, policy, womenOnlyEligible 
                 value={fare} onChange={(e) => setFare(e.target.value === "" ? "" : Number(e.target.value))} />
             </div>
             <p className={`hint ${overCap ? "text-danger" : ""}`}>
-              {overCap ? `Fares stay cost-sharing. The most you can ask is ${rupees(quote!.max_fare_inr)}.` : quote ? `Up to ${rupees(quote.max_fare_inr)}.` : ""}
+              {overCap ? `The maximum fare is ${rupees(quote!.max_fare_inr)} per seat.` : quote ? `You can set any fare up to ${rupees(quote.max_fare_inr)} per seat.` : "Calculating maximum fare…"}
             </p>
           </div>
         </div>

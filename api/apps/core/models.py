@@ -31,6 +31,7 @@ class PolicyVersion(models.Model):
     # Fare (hard rule 2)
     fuel_cost_per_km = models.DecimalField(max_digits=6, decimal_places=2)
     fare_cap_percent = models.PositiveSmallIntegerField(default=15)
+    fare_allowance_inr = models.PositiveIntegerField(default=200)
 
     # Advance
     advance_percent = models.PositiveSmallIntegerField(default=30)

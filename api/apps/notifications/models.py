@@ -23,6 +23,7 @@ class Notification(models.Model):
     channels_sent = models.JSONField(default=list, blank=True)
     attempts = models.PositiveSmallIntegerField(default=0)
     last_error = models.TextField(blank=True)
+    next_retry_at = models.DateTimeField(null=True, blank=True, db_index=True)
     dedupe_key = models.CharField(max_length=120, unique=True, null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     read_at = models.DateTimeField(null=True, blank=True)

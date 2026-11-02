@@ -31,6 +31,14 @@ def max_fare(suggested: int, cap_percent: int) -> int:
     return (suggested * (100 + cap_percent)) // 100
 
 
+def conservative_fare_cap(distance_km, tolls_inr, seats_offered, fuel_cost_per_km, allowance_inr):
+    if seats_offered < 1:
+        raise ValueError("seats_offered must be at least 1")
+    total = Decimal(distance_km) * Decimal(str(fuel_cost_per_km)) + Decimal(tolls_inr)
+    fair_share = total / Decimal(seats_offered + 1)
+    return int(min(fair_share + Decimal(allowance_inr), total / 4, total / (2 * seats_offered)))
+
+
 def advance_for(fare_inr: int, percent: int, round_to: int, minimum: int, maximum: int) -> int:
     """percent of fare, rounded to the nearest round_to, clamped to [minimum, maximum].
 
