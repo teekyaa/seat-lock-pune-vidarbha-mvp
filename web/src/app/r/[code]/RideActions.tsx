@@ -40,7 +40,7 @@ export function RideActions({ ride, signedIn, profileComplete }: { ride: Ride; s
   const price = (
     <div className="min-w-0">
       <p className="text-xl font-extrabold leading-tight tabular-nums">₹{ride.fare_inr.toLocaleString("en-IN")}</p>
-      <p className="text-xs text-muted">₹{ride.advance_inr} advance locks it</p>
+      <p className="text-xs text-muted">{ride.advance_required ? `₹${ride.advance_inr} advance locks it` : "No advance"}</p>
     </div>
   );
 
@@ -110,7 +110,9 @@ export function RideActions({ ride, signedIn, profileComplete }: { ride: Ride; s
             <ol className="space-y-3">
               {[
                 isOffer ? "The seat is held for you now." : `${ride.driver.name.split(" ")[0]} accepts or declines. If they don't reply in time, the request lapses.`,
-                `You pay the ₹${ride.advance_inr} advance straight to them over UPI within ${ride.policy?.hold_hours ?? 2} hours.`,
+                ride.advance_required
+                  ? `You pay the ₹${ride.advance_inr} advance straight to them over UPI within ${ride.policy?.hold_hours ?? 2} hours.`
+                  : "There's no advance on this ride, so you don't pay anything now.",
                 "They mark it received and your seat is locked. You'll see their number and the car then.",
               ].map((t, i) => (
                 <li key={t} className="flex gap-3 text-sm">

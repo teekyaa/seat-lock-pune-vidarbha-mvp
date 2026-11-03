@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { api, getMe } from "@/lib/server";
-import type { CityPair, Policy, Vehicle } from "@/lib/types";
+import type { Place, Policy, Vehicle } from "@/lib/types";
 import { RideForm } from "./RideForm";
 
 export const metadata = { title: "Offer a ride" };
@@ -10,14 +10,13 @@ export const metadata = { title: "Offer a ride" };
 export default async function NewRidePage() {
   const me = await getMe();
   if (!me) redirect("/login?next=/rides/new");
-  const [pairs, vehicles, policy] = await Promise.all([
-    api<CityPair[]>("/city-pairs"),
+  const [places, vehicles, policy] = await Promise.all([
+    api<Place[]>("/places"),
     api<Vehicle[]>("/me/vehicles"),
     api<Policy>("/policy"),
   ]);
   const todo = [
     { done: me.profile_complete, label: "Finish your profile" },
-    { done: Boolean(me.upi_id), label: "Add your UPI ID, so passengers can pay the advance" },
     { done: vehicles.length > 0, label: "Add the car you'll drive" },
   ];
 
@@ -40,7 +39,8 @@ export default async function NewRidePage() {
           <Link href="/me?next=/rides/new" className="btn-primary w-full">Go to your profile</Link>
         </div>
       ) : (
-        <RideForm pairs={pairs} vehicles={vehicles} policy={policy} womenOnlyEligible={me.women_only_eligible} />
+        <RideForm places={places} vehicles={vehicles} policy={policy} womenOnlyEligible={me.women_only_eligible}
+          hasUpi={Boolean(me.upi_id)} />
       )}
     </div>
   );

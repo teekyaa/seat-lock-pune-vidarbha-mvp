@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard } from "@/components/RideCard";
 import { api, getMe } from "@/lib/server";
-import type { Booking, CityPair, Ride } from "@/lib/types";
+import type { Booking, Place, Ride } from "@/lib/types";
 
 type Search = { dir?: string; city?: string; date?: string };
 
@@ -28,8 +28,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   const q = await searchParams;
   const dir = q.dir === "pune" ? "pune" : "home";
   const me = await getMe();
-  const pairs = await api<CityPair[]>("/city-pairs").catch(() => []);
-  const vidarbha = Array.from(new Set(pairs.map((p) => (p.origin === "Pune" ? p.destination : p.origin)))).sort();
+  const places = await api<Place[]>("/places").catch(() => []);
+  const vidarbha = places.filter((p) => p.region === "vidarbha").map((p) => p.name);
 
   const params = new URLSearchParams();
   if (dir === "home") params.set("origin", "Pune");
