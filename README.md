@@ -83,6 +83,16 @@ Signed-in members can vouch for other members and withdraw a vouch later. The pr
 
 Passengers can post an active route/date request for up to seven seats, with an exact date or a flexibility window of up to three days on either side. When a matching open ride is posted, a request is posted for an existing ride, or seats become available again, the passenger gets an inbox notification. The dispatcher also sends email or Web Push when a configured address or subscription is available. Requests can be closed; closed requests no longer receive alerts. The PRD does not set a maximum flexibility window, so this prototype caps it at ±3 days.
 
+## Route network (docs/ROUTE_NETWORK_SPEC.md, Phase 1)
+
+Drivers pick **From** and **To** from our own place list, choose a via route (for example via Wardha or via Yavatmal), untick towns they won't stop in, and pick an exact pickup point. The fare is the cost share summed over the route's legs, with the 15% cap. Rides keep the stops, distance and tolls they were priced on.
+
+- **Places, legs and routes** are managed in Django admin (`Routes` section). `seed_reference_data` creates the places and draft routes with **empty** leg figures. Fill them with the admin action *Measure distance and time with Mappls*, check each one, then *Mark verified*. Unverified legs block posting on that route.
+- **Mappls**: set `MAPPLS_API_KEY` in `api/.env`. It powers the exact-pickup search and leg measurement, server-side only. Without it, the pickup field becomes plain text and legs are entered by hand.
+- **Demo figures**: `seed_demo` (DEBUG only) fills legs with clearly synthetic `source=demo` figures so the flow can be tried locally. The app refuses demo legs outside DEBUG.
+- **Optional advance**: drivers can switch the advance off. Those seats confirm when the driver accepts, nothing is refunded, and cancellations still count on the public record.
+- Phase 2 (search along the route and per-part fares) and Phase 3 (per-leg seats, toll reports) are not built yet.
+
 ## Co-driver bookings (PRD US-04, US-08, US-17, US-21)
 
 Drivers can mark a ride as looking for a co-driver. A requester can book as a passenger or choose the co-driver role; that role stays visible on the booking and driver list and is retained if they join the waitlist. Co-drivers self-attest that they hold a valid driving licence and agree to share driving. The app does not verify the licence or qualifications. In this prototype co-drivers pay the same listed fare and follow the same cancellation policy as passengers; late co-driver cancellations have a separate reliability label.

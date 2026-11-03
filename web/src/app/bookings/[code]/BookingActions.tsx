@@ -57,6 +57,10 @@ export function BookingActions({ booking: b, children }: { booking: Booking; chi
   }
 
   const cancelConsequence = () => {
+    if (b.advance_inr === 0) {
+      const early = b.cutoffs && Date.now() < Date.parse(b.cutoffs.full_refund_until.utc);
+      return early ? "There's no advance to lose. It counts as an early cancellation." : "There's no advance to lose, but it shows as a late cancellation on your record.";
+    }
     if (b.status !== "confirmed") return b.status === "advance_claimed" ? "You marked the advance as paid, so the driver owes it all back." : "Nothing is lost, you haven't paid yet.";
     if (b.free_cancel_any_time) return "The driver moved the departure, so your full advance comes back.";
     const now = Date.now();

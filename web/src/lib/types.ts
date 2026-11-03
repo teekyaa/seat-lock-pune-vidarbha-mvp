@@ -104,6 +104,8 @@ export type Ride = {
   fare_inr: number;
   suggested_fare_inr: number;
   advance_inr: number;
+  advance_required: boolean;
+  route: RideRoute | null;
   women_only: boolean;
   codriver_wanted: boolean;
   notes: string;
@@ -118,8 +120,40 @@ export type Ride = {
     booking_code: string | null;
     waitlist: { id: number; status: string; role: "passenger" | "co_driver"; offer_expires_at: When | null } | null;
   };
-  private?: { driver_phone: string; registration: string; pickup_details: string };
+  private?: { driver_phone: string; registration: string; pickup_details: string; pickup_address?: string; pickup_eloc?: string };
 };
+
+export type RouteStopInfo = { name: string; km: string; minutes?: number | null; enabled?: boolean; place_id?: number; tolls?: number };
+
+export type RideRoute = { name: string; label: string; stops: RouteStopInfo[] };
+
+export type Place = { id: number; name: string; region: "west" | "marathwada" | "vidarbha"; aliases: string[] };
+
+export type RouteOption = {
+  id: number;
+  name: string;
+  label: string;
+  distance_km: string;
+  tolls_inr: number;
+  minutes: number | null;
+  ready: boolean;
+  stops: (RouteStopInfo & { place_id: number })[];
+};
+
+export type RouteQuote = {
+  route_id: number;
+  distance_km: string;
+  tolls_inr: number;
+  fuel_cost_per_km: string;
+  seats_offered: number;
+  suggested_fare_inr: number;
+  max_fare_inr: number;
+  advance_percent: number;
+  advance_inr: number;
+  policy_version: string;
+};
+
+export type PickupResult = { name: string; address: string; eloc: string };
 
 export type Booking = {
   code: string;

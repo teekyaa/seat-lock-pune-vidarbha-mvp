@@ -90,10 +90,12 @@ class RideListView(APIView):
 
     def post(self, request):
         d = request.data
-        pair = get_object_or_404(CityPair, pk=_int(d, "city_pair"))
         vehicle = request.user.vehicles.filter(pk=_int(d, "vehicle")).first()
         if not vehicle:
             raise DomainError("Choose one of your saved cars.")
+        if "route" in d:
+            return self._post_route_ride(request, d, vehicle)
+        pair = get_object_or_404(CityPair, pk=_int(d, "city_pair"))
         ride = rides.create_ride(
             request.user, city_pair=pair, vehicle=vehicle, departure_at=_datetime(d.get("departure_at")),
             seats_offered=_int(d, "seats_offered"), fare_inr=_int(d, "fare_inr"),
@@ -102,6 +104,32 @@ class RideListView(APIView):
             women_only=bool(d.get("women_only")), codriver_wanted=bool(d.get("codriver_wanted")),
             duration_hours=d.get("duration_hours") and _int(d, "duration_hours"),
             policy_ack=bool(d.get("policy_ack")),
+        )
+        return Response(ride_json(ride, request.user, detail=True), status=status.HTTP_201_CREATED)
+
+    def _post_route_ride(self, request, d, vehicle):
+        from apps.routes.models import Place, Route
+
+        advance_required = d.get("advance_required", True)
+        if not isinstance(advance_required, bool):
+            raise DomainError("Choose whether this ride needs an advance.")
+        pickup = d.get("pickup")
+        if not isinstance(pickup, dict):
+            raise DomainError("Add an exact pickup point.")
+        disabled = d.get("disabled_stops", [])
+        if not isinstance(disabled, list) or not all(isinstance(x, int) and not isinstance(x, bool) for x in disabled):
+            raise DomainError("Choose stops from the route.")
+        ride = rides.create_route_ride(
+            request.user,
+            route=get_object_or_404(Route, pk=_int(d, "route"), active=True),
+            from_place=get_object_or_404(Place, pk=_int(d, "from_place")),
+            to_place=get_object_or_404(Place, pk=_int(d, "to_place")),
+            vehicle=vehicle, departure_at=_datetime(d.get("departure_at")),
+            seats_offered=_int(d, "seats_offered"), fare_inr=_int(d, "fare_inr"),
+            pickup=pickup, dropoff_point=str(d.get("dropoff_point", "")), disabled_stop_ids=disabled,
+            pickup_details=str(d.get("pickup_details", "")), notes=str(d.get("notes", ""))[:500],
+            women_only=d.get("women_only") is True, codriver_wanted=d.get("codriver_wanted") is True,
+            policy_ack=d.get("policy_ack") is True, advance_required=advance_required,
         )
         return Response(ride_json(ride, request.user, detail=True), status=status.HTTP_201_CREATED)
 
@@ -276,8 +304,8 @@ class PublicTripShareView(APIView):
                 "colour": ride.vehicle.colour,
                 "registration": ride.vehicle.registration,
             },
-            "origin": ride.city_pair.origin,
-            "destination": ride.city_pair.destination,
+            "origin": ride.origin,
+            "destination": ride.destination,
             "pickup_point": ride.pickup_point,
             "dropoff_point": ride.dropoff_point,
             "departure_at": {"utc": ride.departure_at.isoformat(), "ist": ist(ride.departure_at)},

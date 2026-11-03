@@ -183,3 +183,12 @@ def test_profile_completion(rahul):
     assert r.status_code == 400
     r = c.patch("/api/v1/me", {"upi_id": "rahul@oksbi", "accept_terms": True}, format="json")
     assert r.status_code == 200 and r.data["profile_complete"]
+
+
+def test_stale_token_is_treated_as_signed_out(ride, policy, settings):
+    settings.OTP_DEBUG_ECHO = True
+    stale = APIClient()
+    stale.credentials(HTTP_AUTHORIZATION="Bearer not-a-real-token")
+    assert stale.get("/api/v1/rides").status_code == 200  # public pages still load
+    assert stale.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json").status_code == 200
+    assert stale.get("/api/v1/me").status_code == 401  # protected pages ask for sign-in
