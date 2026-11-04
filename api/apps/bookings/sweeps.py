@@ -6,12 +6,15 @@ and is safe to run again (it only touches rows still in the triggering state).
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Exists, F, OuterRef
 from django.utils import timezone
 
 from apps.core import policy as calc
 from apps.core.timefmt import ist
 from apps.notifications import services as notify
 from apps.rides.models import Ride
+from apps.rides.services import with_seat_counts
+from apps.admin_dashboard.flags import is_enabled
 from apps.trust import services as trust
 from apps.trust.models import ReliabilityEvent
 
@@ -76,6 +79,22 @@ def _reoffer(ride_id, now):
         trust.alert_matching_seat_wanted(ride)
 
 
+def resume_waitlists(now):
+    """Resume queued offers after a booking pause once free seats exist."""
+    if not is_enabled("bookings.new_bookings_enabled"):
+        return 0
+    waiting = WaitlistEntry.objects.filter(ride_id=OuterRef("pk"), status=WaitlistEntry.Status.WAITING)
+    rides = with_seat_counts(Ride.objects.filter(
+        status=Ride.Status.OPEN, departure_at__gt=now,
+    ).annotate(has_waiting=Exists(waiting)).filter(has_waiting=True)).filter(
+        seats_offered__gt=F("seats_held") + F("offers_open")
+    ).order_by("departure_at", "pk")
+    ride_ids = list(rides.values_list("pk", flat=True)[:BATCH])
+    for ride_id in ride_ids:
+        _reoffer(ride_id, now)
+    return len(ride_ids)
+
+
 def settle_departures(now):
     """At departure, penalty-tier cancellations that were not refilled are decided."""
     with transaction.atomic():
@@ -138,6 +157,7 @@ def run_all(now=None):
         "requests_expired": expire_requests(now),
         "holds_expired": expire_holds(now),
         "offers_rerun": expire_offers(now),
+        "waitlists_resumed": resume_waitlists(now),
         "departures_settled": settle_departures(now),
         "refunds_overdue": flag_overdue_refunds(now),
         "no_shows_finalised": finalise_no_shows(now),

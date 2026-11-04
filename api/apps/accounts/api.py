@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from apps.core.errors import Conflict, DomainError, ServiceUnavailable
 from apps.notifications.channels import SMSDeliveryError, sms_backend
+from apps.admin_dashboard.flags import is_enabled
 from apps.trust.services import reliability_for, vouch_profile
 
 from .auth import hash_otp, hash_token, issue_token
@@ -170,10 +171,14 @@ class OTPVerifyView(APIView):
                     error = DomainError("That code doesn't match. Check the SMS and try again.", "otp_wrong")
                 challenge.save(update_fields=["attempts", "consumed_at"])
             if error is None:
-                user, created = User.objects.get_or_create(phone=phone)
-                if created:
-                    user.set_unusable_password()
-                    user.save()
+                user = User.objects.filter(phone=phone).first()
+                if user is None and not is_enabled("signup.new_signups_enabled"):
+                    error = ServiceUnavailable("New registrations are temporarily unavailable.", "signup_paused")
+                else:
+                    user, created = User.objects.get_or_create(phone=phone)
+                    if created:
+                        user.set_unusable_password()
+                        user.save()
         if error:
             raise error
         if not user.is_active:

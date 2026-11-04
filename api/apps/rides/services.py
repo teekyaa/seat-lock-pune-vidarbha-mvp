@@ -4,7 +4,8 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from apps.core import policy as calc
-from apps.core.errors import DomainError, Forbidden
+from apps.core.errors import DomainError, Forbidden, ServiceUnavailable
+from apps.admin_dashboard.flags import is_enabled
 from apps.core.models import CityPair, PolicyVersion, audit
 from apps.core.timefmt import ist
 from apps.trust.services import alert_matching_seat_wanted, posting_blocked_until
@@ -58,6 +59,8 @@ def with_seat_counts(qs):
 
 def create_ride(driver, *, city_pair, vehicle, departure_at, seats_offered, fare_inr, pickup_point, dropoff_point,
                 pickup_details="", notes="", women_only=False, codriver_wanted=False, duration_hours=None, policy_ack=False):
+    if not is_enabled("rides.new_ride_creation_enabled"):
+        raise ServiceUnavailable("New ride posting is temporarily unavailable.", "ride_posting_paused")
     now = timezone.now()
     policy = PolicyVersion.current(now)
     if not driver.profile_complete:

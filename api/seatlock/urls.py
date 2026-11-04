@@ -69,11 +69,14 @@ api = [
     path("trip-shares/<str:token>", bookings.PublicTripShareView.as_view()),
     path("waitlist/<int:pk>/<str:action>", bookings.WaitlistActionView.as_view()),
 ]
+if settings.ADMIN_DASHBOARD_ENABLED:
+    api.insert(0, path("admin/", include("apps.admin_dashboard.urls")))
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
     path("healthz", lambda request: JsonResponse({"ok": True})),
     path("readyz", readiness),
     path("internal/loadtest-guard", loadtest_guard),
     path("api/v1/", include(api)),
 ]
+if settings.LEGACY_ADMIN_ENABLED:
+    urlpatterns.insert(0, path("admin/", admin.site.urls))

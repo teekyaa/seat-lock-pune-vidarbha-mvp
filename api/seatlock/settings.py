@@ -4,6 +4,7 @@ All environment-specific values come from environment variables. See
 `.env.example` for the full list.
 """
 import os
+import ipaddress
 from pathlib import Path
 
 import dj_database_url
@@ -44,6 +45,19 @@ if not DEBUG and (len(SECRET_KEY) < 50 or SECRET_KEY == "change-me"):
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+# Legacy Django admin does not enforce the separate operator TOTP policy.
+LEGACY_ADMIN_ENABLED = env_bool("DJANGO_LEGACY_ADMIN_ENABLED", DEBUG)
+ADMIN_DASHBOARD_ENABLED = env_bool("ADMIN_DASHBOARD_ENABLED", DEBUG)
+try:
+    ADMIN_IP_ALLOWLIST = [ipaddress.ip_network(item, strict=False) for item in env_list("ADMIN_IP_ALLOWLIST")]
+except ValueError as exc:
+    raise RuntimeError("ADMIN_IP_ALLOWLIST must contain valid IP addresses or CIDR ranges.") from exc
+if ADMIN_DASHBOARD_ENABLED and not DEBUG:
+    from cryptography.fernet import Fernet
+    try:
+        Fernet(env("ADMIN_TOTP_ENCRYPTION_KEY", "").encode("ascii"))
+    except (ValueError, TypeError, UnicodeError) as exc:
+        raise RuntimeError("ADMIN_TOTP_ENCRYPTION_KEY must be a valid Fernet key when the admin dashboard is enabled.") from exc
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -53,12 +67,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "drf_spectacular",
     "apps.accounts",
     "apps.core",
     "apps.rides",
     "apps.bookings",
     "apps.trust",
     "apps.notifications",
+    "apps.admin_dashboard",
 ]
 
 MIDDLEWARE = [
@@ -131,11 +147,13 @@ else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.auth.BearerTokenAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "EXCEPTION_HANDLER": "apps.core.errors.exception_handler",
     "UNAUTHENTICATED_USER": None,
 }
+SPECTACULAR_SETTINGS = {"TITLE": "Seat Lock Admin API", "VERSION": "0.1.0"}
 
 # Celery: broker is Redis. Beat runs one tick per minute (see apps.notifications.tasks).
 CELERY_BROKER_URL = REDIS_URL or "memory://"
@@ -200,6 +218,9 @@ if not DEBUG:
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "formatters": {"admin_json": {"()": "apps.admin_dashboard.logging.AdminJSONFormatter"}},
+    "handlers": {"console": {"class": "logging.StreamHandler"},
+                 "admin_console": {"class": "logging.StreamHandler", "formatter": "admin_json"}},
+    "loggers": {"seatlock.admin": {"handlers": ["admin_console"], "level": "INFO", "propagate": False}},
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
 }

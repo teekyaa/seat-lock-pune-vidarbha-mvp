@@ -30,7 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en-IN" className={overpass.variable}>
       <body className="min-h-dvh font-sans antialiased">
-        <div className="mx-auto min-h-dvh max-w-md px-4" style={{ paddingTop: "var(--safe-top)" }}>
+        <div className="site-content mx-auto min-h-dvh max-w-md px-4" style={{ paddingTop: "var(--safe-top)" }}>
           {children}
         </div>
         <TabBar unread={unread} />
