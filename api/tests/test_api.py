@@ -198,19 +198,19 @@ def test_other_users_cannot_see_booking(ride, rahul, neha):
 def test_post_ride_with_fare_cap(driver, car, pair, policy, clock):
     c = client_for(driver)
     quote = c.get(f"/api/v1/fare-quote?city_pair={pair.pk}&seats=3").data
-    assert quote["suggested_fare_inr"] == 1555 and quote["max_fare_inr"] == 1036
+    assert quote["suggested_fare_inr"] == 1555 and quote["max_fare_inr"] == 1788  # 15% above the cost share
     dep = (clock.now + timedelta(days=3)).isoformat()
     payload = {"city_pair": pair.pk, "vehicle": car.pk, "departure_at": dep, "seats_offered": 3,
                "fare_inr": 2000, "pickup_point": "Swargate", "dropoff_point": "Sitabuldi", "policy_ack": True}
     r = c.post("/api/v1/rides", payload, format="json")
     assert r.status_code == 400 and r.data["code"] == "fare_above_cap"
-    payload["fare_inr"] = 1037
+    payload["fare_inr"] = 1789
     assert c.post("/api/v1/rides", payload, format="json").status_code == 400
-    payload["fare_inr"] = 1036
+    payload["fare_inr"] = 1788
     r = c.post("/api/v1/rides", payload, format="json")
     assert r.status_code == 201
     assert re.fullmatch(r"[A-Z2-9]{6}", r.data["code"])
-    assert r.data["advance_inr"] == 300
+    assert r.data["advance_inr"] == 550  # 30% of 1788 = 536.4 -> 550
 
 
 def test_naive_departure_rejected(driver, car, pair, policy):
@@ -248,3 +248,12 @@ def test_profile_completion(rahul):
     assert r.status_code == 400
     r = c.patch("/api/v1/me", {"upi_id": "rahul@oksbi", "accept_terms": True}, format="json")
     assert r.status_code == 200 and r.data["profile_complete"]
+
+
+def test_stale_token_is_treated_as_signed_out(ride, policy, settings):
+    settings.OTP_DEBUG_ECHO = True
+    stale = APIClient()
+    stale.credentials(HTTP_AUTHORIZATION="Bearer not-a-real-token")
+    assert stale.get("/api/v1/rides").status_code == 200  # public pages still load
+    assert stale.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json").status_code == 200
+    assert stale.get("/api/v1/me").status_code == 401  # protected pages ask for sign-in

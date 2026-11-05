@@ -11,6 +11,7 @@ from django.urls import include, path
 from apps.accounts import api as accounts
 from apps.bookings import api as bookings
 from apps.notifications import api as notifications
+from apps.routes import api as routes
 from apps.trust import api as trust
 
 admin.site.site_header = "Seat Lock ops"
@@ -57,6 +58,10 @@ api = [
     path("users/<uuid:pk>/vouch", trust.UserVouchView.as_view()),
     path("seat-wanted/<int:pk>", trust.SeatWantedDetailView.as_view()),
     path("city-pairs", bookings.CityPairsView.as_view()),
+    path("places", routes.PlacesView.as_view()),
+    path("places/search", routes.PlaceSearchView.as_view()),
+    path("routes", routes.RoutesView.as_view()),
+    path("route-quote", routes.RouteQuoteView.as_view()),
     path("fare-quote", bookings.FareQuoteView.as_view()),
     path("policy", bookings.PolicyView.as_view()),
     path("rides", bookings.RideListView.as_view()),

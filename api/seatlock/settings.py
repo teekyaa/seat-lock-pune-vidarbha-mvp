@@ -52,6 +52,9 @@ try:
     ADMIN_IP_ALLOWLIST = [ipaddress.ip_network(item, strict=False) for item in env_list("ADMIN_IP_ALLOWLIST")]
 except ValueError as exc:
     raise RuntimeError("ADMIN_IP_ALLOWLIST must contain valid IP addresses or CIDR ranges.") from exc
+if LEGACY_ADMIN_ENABLED and not DEBUG and not ADMIN_IP_ALLOWLIST:
+    # Route legs are still managed in the legacy admin; in production it must sit behind an allowlist.
+    raise RuntimeError("DJANGO_LEGACY_ADMIN_ENABLED in production requires ADMIN_IP_ALLOWLIST.")
 if ADMIN_DASHBOARD_ENABLED and not DEBUG:
     from cryptography.fernet import Fernet
     try:
@@ -75,6 +78,7 @@ INSTALLED_APPS = [
     "apps.trust",
     "apps.notifications",
     "apps.admin_dashboard",
+    "apps.routes",
 ]
 
 MIDDLEWARE = [
@@ -84,6 +88,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.admin_dashboard.legacy_admin.LegacyAdminAllowlistMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -202,6 +207,13 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "Seat Lock <no-reply@seatlock.loc
 VAPID_PUBLIC_KEY = env("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = env("VAPID_PRIVATE_KEY", "")
 VAPID_SUBJECT = env("VAPID_SUBJECT", "mailto:ops@seatlock.local")
+
+# Mappls (MapmyIndia): place search for exact pickup points, and one-time leg measurement in admin.
+# The key stays on this server. URLs are configurable in case Mappls moves them; check their console.
+MAPPLS_API_KEY = env("MAPPLS_API_KEY", "")
+MAPPLS_AUTOSUGGEST_URL = env("MAPPLS_AUTOSUGGEST_URL", "https://search.mappls.com/search/places/autosuggest/json")
+MAPPLS_ROUTE_URL = env("MAPPLS_ROUTE_URL", "https://apis.mappls.com/advancedmaps/v1/{key}/route_adv/driving/{coords}")
+MAPPLS_TIMEOUT_SECONDS = 8
 
 # Public web origin, used in share links and notification bodies.
 WEB_BASE_URL = env("WEB_BASE_URL", "http://localhost:3000")

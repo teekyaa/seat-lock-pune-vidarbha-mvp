@@ -56,7 +56,7 @@ def _reconfirm_48_check(n):
         notify.schedule(
             entry.passenger, "waitlist_heads_up", ride=ride, url=notify.ride_url(ride),
             title="A seat may open up",
-            body=f"A passenger on {ride.city_pair.origin} to {ride.city_pair.destination}, {ist(ride.departure_at)} "
+            body=f"A passenger on {ride.origin} to {ride.destination}, {ist(ride.departure_at)} "
                  "hasn't reconfirmed. Keep an eye out for an offer.",
             dedupe_key=f"waitlist_heads_up:{b.pk}:{entry.pk}",
         )

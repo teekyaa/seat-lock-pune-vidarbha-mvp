@@ -20,9 +20,9 @@ The audit used a Windows 11 development machine with 12 logical CPUs and 15.8 Gi
 | Medium | Mitigated in code | Browser proxy/session writes check Origin, request bodies have limits, unsafe redirect destinations are rejected, and booking API boolean/fractional-number handling is stricter. Verify Origin behavior through the real HTTPS proxy and perform broader adversarial testing. |
 | Medium | Partially mitigated | Ride-list availability reuses annotated counts. Public profile/reliability presentation and booking lists may still issue repeated queries; measure query counts and plans with realistic PostgreSQL data before tuning indexes. |
 | Medium | Open | TextBee's Android phone, SIM, carrier, network and provider availability limit throughput and reliability. A provider interface exists, but acceptance of a request is not proof of delivery. An outage must never activate development OTP echo. Production-grade SMS, operational alerts and telecom requirements need review. |
-| Medium | Open | Route distances, tolls and operating cost are placeholders. The local fare policy applies estimated conservative limits but the legal cost definition and rules have not been validated for this product. Obtain Maharashtra legal advice on carpooling, licence/registration, insurance, fares and aggregate contributions before public use. |
+| Medium | Open | Route leg distances and tolls must be measured and verified in admin before use, and fuel cost per km is a placeholder. Fares are capped at 15% above the per-leg cost share (CLAUDE.md hard rule 2, spec D5), but the legal cost definition and rules have not been validated for this product. Obtain Maharashtra legal advice on carpooling, licence/registration, insurance, fares and aggregate contributions before public use. |
 | Medium | Open | Authentication, ownership, input validation, CSRF, SSRF, error handling and data privacy have not received a complete independent penetration test. Particularly test proxy trust, concurrent OTP attempts, untrusted inputs and object-level access. |
-| Low | Open | Some older documents still describe the previous fare policy; deployment and operating procedures need owner review. |
+| Low | Open | Deployment and operating procedures need owner review. |
 
 ## Verification performed
 

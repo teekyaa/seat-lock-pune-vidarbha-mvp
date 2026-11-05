@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronIcon, PhoneIcon } from "@/components/icons";
 import { PolicyTimeline } from "@/components/PolicyTimeline";
+import { RouteDiagram } from "@/components/RouteDiagram";
 import { RouteMark } from "@/components/RouteMark";
 import { TopBar } from "@/components/TopBar";
 import { ApiError, api, getMe } from "@/lib/server";
@@ -79,11 +80,21 @@ export default async function RidePage({ params, searchParams }: Props) {
             )}
             {ride.women_only && <span className="pill bg-pink-50 text-pink-800">Women only</span>}
             {ride.codriver_wanted && <span className="pill bg-mile-wash text-brand">Co-driver wanted</span>}
+            {!ride.advance_required && <span className="pill bg-paper text-muted ring-1 ring-line">No advance</span>}
           </div>
         </div>
       </section>
 
       <section className="card mt-5" aria-label="Journey">
+        {ride.route ? (
+          <>
+            <p className="text-sm font-semibold text-muted">{ride.route.label}, {Number(ride.distance_km)} km</p>
+            <p className="mb-2 text-sm text-muted">
+              Leaves {dep.time} from {ride.pickup_point}. Arrives around {arr.day === dep.day ? arr.time : `${arr.time}, ${arr.day}`} at {ride.dropoff_point}.
+            </p>
+            <RouteDiagram stops={ride.route.stops} />
+          </>
+        ) : (
         <ol className="relative space-y-5 pl-7">
           <span className="absolute bottom-3 left-[7px] top-3 w-0.5 bg-ink/15" aria-hidden />
           <li className="relative">
@@ -97,9 +108,10 @@ export default async function RidePage({ params, searchParams }: Props) {
             <p className="text-base font-bold">{ride.dropoff_point}, {ride.destination}</p>
           </li>
         </ol>
+        )}
         <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4 text-sm">
           <div><dt className="text-muted">Car</dt><dd className="font-semibold">{ride.vehicle.colour} {ride.vehicle.make_model}</dd></div>
-          <div><dt className="text-muted">Advance to lock a seat</dt><dd className="font-semibold">₹{ride.advance_inr} over UPI</dd></div>
+          <div><dt className="text-muted">Advance to lock a seat</dt><dd className="font-semibold">{ride.advance_required ? `₹${ride.advance_inr} over UPI` : "None on this ride"}</dd></div>
         </dl>
         {ride.notes && <p className="mt-4 rounded-xl bg-paper p-3 text-sm">&ldquo;{ride.notes}&rdquo;</p>}
       </section>
@@ -108,6 +120,7 @@ export default async function RidePage({ params, searchParams }: Props) {
         <section className="mt-3 rounded-2xl bg-brand p-4 text-white">
           <p className="text-sm text-white/80">{isDriver ? "Shared with your confirmed passengers" : "You're confirmed on this ride"}</p>
           <p className="mt-1 text-base font-bold">Car {ride.private.registration}</p>
+          {ride.private.pickup_address && <p className="mt-1 text-sm">Pickup: {ride.pickup_point}, {ride.private.pickup_address}</p>}
           {ride.private.pickup_details && <p className="mt-1 text-sm">{ride.private.pickup_details}</p>}
           {!isDriver && (
             <a href={`tel:${ride.private.driver_phone}`} className="btn mt-3 w-full bg-white text-brand">

@@ -39,7 +39,9 @@ def _now():
 
 
 def _lock_ride(ride_id):
-    return Ride.objects.select_for_update(of=("self",)).select_related("city_pair", "driver", "policy_version").get(pk=ride_id)
+    return Ride.objects.select_for_update(of=("self",)).select_related(
+        "city_pair", "from_place", "to_place", "driver", "policy_version"
+    ).get(pk=ride_id)
 
 
 def _lock_booking(booking_id):
@@ -79,7 +81,7 @@ def _codriver_taken(ride, now=None, *, exclude_offer=None):
 
 
 def _route(ride):
-    return f"{ride.city_pair.origin} to {ride.city_pair.destination}"
+    return f"{ride.origin} to {ride.destination}"
 
 
 def _require_driver(booking, user):
@@ -98,6 +100,8 @@ def upi_link(vpa, name, amount_inr, note):
 
 
 def _create_refund(booking, amount, now):
+    if amount <= 0:
+        return None  # no-advance bookings have nothing to refund
     policy = booking.policy_version
     due_at = now + timedelta(hours=policy.refund_due_hours)
     payment = Payment.objects.create(
@@ -203,6 +207,12 @@ def accept(booking, driver):
         booking.status = S.ACCEPTED
         booking.accepted_at = now
         booking.driver_policy_ack_at = now
+        if booking.advance_inr == 0:
+            # No advance on this ride (spec D6): accepting is what locks the seat.
+            booking.save()
+            audit(driver, "booking.accepted", booking)
+            _confirm_seat(ride, booking, now, driver)
+            return booking
         booking.hold_expires_at = min(now + timedelta(hours=policy.hold_hours), ride.departure_at)
         booking.save()
         _notify_accepted(booking)
@@ -243,6 +253,8 @@ def claim_advance(booking, passenger, *, utr=""):
     with transaction.atomic():
         booking = _lock_booking(booking.pk)
         _require_passenger(booking, passenger)
+        if booking.advance_inr == 0:
+            raise Conflict("This ride has no advance, so there's nothing to pay.", "no_advance")
         if booking.status != S.ACCEPTED:
             raise Conflict("You can mark the advance as paid once the driver accepts.")
         if booking.hold_expires_at and booking.hold_expires_at <= now:
@@ -264,7 +276,8 @@ def claim_advance(booking, passenger, *, utr=""):
 
 
 def confirm_advance(booking, driver):
-    """Driver taps 'Advance received'. The only way a seat becomes confirmed."""
+    """Driver taps 'Advance received'. Rides with an advance confirm only this way;
+    no-advance rides confirm when the driver accepts."""
     now = _now()
     with transaction.atomic():
         ride = _lock_ride(booking.ride_id)
@@ -278,9 +291,6 @@ def confirm_advance(booking, driver):
             raise Conflict("This ride is no longer open.")
         if ride.bookings.filter(status=S.CONFIRMED).exclude(pk=booking.pk).count() >= ride.seats_offered:
             raise Conflict("All seats are already confirmed.", "ride_full")
-        booking.status = S.CONFIRMED
-        booking.confirmed_at = now
-        booking.save()
         advance = booking.payments.filter(kind=Payment.Kind.ADVANCE).first()
         if advance:
             advance.status = Payment.Status.CONFIRMED
@@ -291,22 +301,34 @@ def confirm_advance(booking, driver):
                 booking=booking, kind=Payment.Kind.ADVANCE, amount_inr=booking.advance_inr,
                 status=Payment.Status.CONFIRMED, confirmed_at=now,
             )
-        if booking.waitlist_entry_id:
-            WaitlistEntry.objects.filter(pk=booking.waitlist_entry_id).update(status=WaitlistEntry.Status.ACCEPTED)
-        _apply_refill(ride, booking, now)
-        trip = f"Booking {booking.code}, {_route(ride)}, {ist(ride.departure_at)}."
-        notify.schedule(
-            booking.passenger, "booking_confirmed", booking=booking, ride=ride, url=notify.booking_url(booking),
-            title="Seat confirmed", body=f"{trip} {notify.cutoff_text(booking)}",
-        )
-        notify.schedule(
-            ride.driver, "booking_confirmed", booking=booking, ride=ride, url=notify.booking_url(booking),
-            title="Passenger confirmed",
-            body=f"{trip} {booking.passenger.name}'s phone number is now in the booking.",
-        )
-        notify.schedule_trip_reminders(booking)
-        audit(driver, "booking.confirmed", booking)
+        _confirm_seat(ride, booking, now, driver)
     return booking
+
+
+def _confirm_seat(ride, booking, now, actor):
+    """Lock the seat: shared by 'Advance received' and by accepting on a no-advance ride.
+    Call inside the transaction that holds the ride row lock."""
+    if ride.bookings.filter(status=S.CONFIRMED).exclude(pk=booking.pk).count() >= ride.seats_offered:
+        raise Conflict("All seats are already confirmed.", "ride_full")
+    booking.status = S.CONFIRMED
+    booking.confirmed_at = now
+    booking.hold_expires_at = None if booking.advance_inr == 0 else booking.hold_expires_at
+    booking.save()
+    if booking.waitlist_entry_id:
+        WaitlistEntry.objects.filter(pk=booking.waitlist_entry_id).update(status=WaitlistEntry.Status.ACCEPTED)
+    _apply_refill(ride, booking, now)
+    trip = f"Booking {booking.code}, {_route(ride)}, {ist(ride.departure_at)}."
+    notify.schedule(
+        booking.passenger, "booking_confirmed", booking=booking, ride=ride, url=notify.booking_url(booking),
+        title="Seat confirmed", body=f"{trip} {notify.cutoff_text(booking)}",
+    )
+    notify.schedule(
+        ride.driver, "booking_confirmed", booking=booking, ride=ride, url=notify.booking_url(booking),
+        title="Passenger confirmed",
+        body=f"{trip} {booking.passenger.name}'s phone number is now in the booking.",
+    )
+    notify.schedule_trip_reminders(booking)
+    audit(actor, "booking.confirmed", booking)
 
 
 def _apply_refill(ride, new_booking, now):
@@ -355,7 +377,11 @@ def cancel_by_passenger(booking, passenger):
             tier = calc.FULL if booking.free_cancel_any_time else calc.passenger_cancel_tier(
                 hours_left, policy.full_refund_before_hours, policy.full_penalty_under_hours
             )
-            if tier == calc.FULL:
+            late_kind = Kind.CODRIVER_LATE_CANCEL if booking.role == Booking.Role.CO_DRIVER else Kind.PASSENGER_LATE_CANCEL
+            if booking.advance_inr == 0:
+                booking.save()
+                kind = Kind.PASSENGER_EARLY_CANCEL if tier == calc.FULL else late_kind
+            elif tier == calc.FULL:
                 booking.refund_outcome = Booking.RefundOutcome.FULL
                 booking.refund_inr = booking.advance_inr
                 booking.save()
@@ -366,8 +392,7 @@ def cancel_by_passenger(booking, passenger):
                 booking.penalty_tier = Booking.PenaltyTier.HALF if tier == calc.HALF else Booking.PenaltyTier.ALL
                 booking.confirmed_seats_at_cancel = confirmed_before
                 booking.save()
-                kind = (Kind.CODRIVER_LATE_CANCEL if booking.role == Booking.Role.CO_DRIVER
-                        else Kind.PASSENGER_LATE_CANCEL)
+                kind = late_kind
             trust.record_event(passenger, kind, ride=ride, booking=booking, hours_before_departure=hours_left)
         elif previous == S.ADVANCE_CLAIMED:
             # Driver never confirmed receipt. If money did move, it all goes back.
@@ -414,7 +439,7 @@ def cancel_ride(ride, driver):
             had_confirmed |= previous == S.CONFIRMED
             booking.status = S.CANCELLED_DRIVER
             booking.cancelled_at = now
-            if previous in (S.ADVANCE_CLAIMED, S.CONFIRMED):
+            if previous in (S.ADVANCE_CLAIMED, S.CONFIRMED) and booking.advance_inr:
                 booking.refund_outcome = Booking.RefundOutcome.FULL
                 booking.refund_inr = booking.advance_inr
                 booking.save()
@@ -615,11 +640,15 @@ def accept_waitlist_offer(entry, passenger, *, policy_ack=False):
             fare_inr=ride.fare_inr, advance_inr=ride.advance_inr,
             status=S.ACCEPTED, passenger_policy_ack_at=now,
             driver_policy_ack_at=ride.created_at,  # the driver agreed to the policy when posting
-            accepted_at=now, hold_expires_at=min(now + timedelta(hours=policy.hold_hours), ride.departure_at),
+            accepted_at=now,
+            hold_expires_at=None if ride.advance_inr == 0 else min(now + timedelta(hours=policy.hold_hours), ride.departure_at),
             waitlist_entry=entry,
         )
         entry.status = WaitlistEntry.Status.ACCEPTED
         entry.save()
+        if booking.advance_inr == 0:
+            _confirm_seat(ride, booking, now, passenger)
+            return booking
         _notify_accepted(booking)
         notify.schedule(
             ride.driver, "waitlist_taken", booking=booking, ride=ride, url=notify.ride_url(ride),

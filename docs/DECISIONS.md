@@ -59,3 +59,11 @@
 **Decision:** Implement new-ride posting and new-booking controls, plus a noncritical signup control. Critical enforcement reads the database directly rather than Redis, so a cached value cannot prolong a pause. The signup setting uses a 30-second cache, falling back to the database. If the database cannot be read, the declared default is returned and the operation itself still requires the database. The scheduler resumes eligible waiting lists after bookings are re-enabled. Already-running requests may finish, and existing waitlist offers may expire while paused.
 
 **Consequences:** This intentionally differs from the blanket Redis-cache requirement; performance and concurrency must be measured on PostgreSQL. Other required flags and a robust pause policy for existing waitlist offers remain unimplemented. The UI warns about in-flight requests and expiring offers.
+
+## Route data in the legacy admin
+
+**Context:** Route legs (distance, tolls, verification) are managed in the legacy Django admin (`docs/ROUTE_NETWORK_SPEC.md`, D3 and D4). The new dashboard does not cover them yet, and the legacy admin is off by default outside DEBUG.
+
+**Decision:** Until the dashboard has route management, operators may turn the legacy admin on in production with `DJANGO_LEGACY_ADMIN_ENABLED=1`, but only behind `ADMIN_IP_ALLOWLIST`. Settings refuse to start without the allowlist, and `LegacyAdminAllowlistMiddleware` blocks `/admin/` from other addresses.
+
+**Consequences:** The legacy admin still has no TOTP; the allowlist is the access control. Move route management into the dashboard and turn the legacy admin off again.

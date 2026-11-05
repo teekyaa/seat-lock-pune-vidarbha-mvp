@@ -51,9 +51,9 @@ def ride_json(ride, viewer=None, *, detail=False):
     seats_left = availability(ride)
     data = {
         "code": ride.code,
-        "origin": ride.city_pair.origin,
-        "destination": ride.city_pair.destination,
-        "distance_km": ride.city_pair.distance_km,
+        "origin": ride.origin,
+        "destination": ride.destination,
+        "distance_km": ride.route_km,
         "departure_at": _dt(ride.departure_at),
         "expected_arrival_at": _dt(ride.expected_arrival_at),
         "pickup_point": ride.pickup_point,
@@ -63,6 +63,8 @@ def ride_json(ride, viewer=None, *, detail=False):
         "fare_inr": ride.fare_inr,
         "suggested_fare_inr": ride.suggested_fare_inr,
         "advance_inr": ride.advance_inr,
+        "advance_required": ride.advance_required,
+        "route": _route_json(ride),
         "women_only": ride.women_only,
         "codriver_wanted": ride.codriver_wanted,
         "notes": ride.notes,
@@ -93,8 +95,24 @@ def ride_json(ride, viewer=None, *, detail=False):
             "driver_phone": ride.driver.phone,
             "registration": ride.vehicle.registration,
             "pickup_details": ride.pickup_details,
+            "pickup_address": ride.pickup_address,
+            "pickup_eloc": ride.pickup_eloc,
         }
     return data
+
+
+def _route_json(ride):
+    """The priced route snapshot. Legacy fixed-pair rides have none."""
+    if not ride.route_id:
+        return None
+    from apps.routes.services import via_label
+
+    return {
+        "name": ride.route.name,
+        "label": via_label([s["name"] for s in ride.stops]),
+        "stops": [{"name": s["name"], "km": s["km"], "minutes": s.get("minutes"), "enabled": s.get("enabled", True)}
+                  for s in ride.stops],
+    }
 
 
 def _refund(booking):

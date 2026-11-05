@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.utils import timezone
-from rest_framework import authentication, exceptions
+from rest_framework import authentication
 
 from .models import AuthToken
 
@@ -38,7 +38,9 @@ class BearerTokenAuthentication(authentication.BaseAuthentication):
         raw = header[len(self.keyword) + 1 :].strip()
         token = AuthToken.objects.select_related("user").filter(key_hash=hash_token(raw)).first()
         if not token or token.expires_at <= timezone.now() or not token.user.is_active:
-            raise exceptions.AuthenticationFailed("Your session has ended. Please sign in again.")
+            # Treat a stale cookie as signed out rather than failing the request, so public pages and
+            # sign-in still work. Protected endpoints then answer 401 and the app sends people to sign in.
+            return None
         now = timezone.now()
         if not token.last_used_at or now - token.last_used_at > timedelta(minutes=5):
             AuthToken.objects.filter(pk=token.pk).update(last_used_at=now)

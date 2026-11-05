@@ -124,5 +124,55 @@ def confirm():
 
 
 @pytest.fixture
+def network(db, driver):
+    """Pune to Chandrapur via Wardha, verified legs. Figures are test fixtures, not real data."""
+    from apps.routes.models import Leg, Place, Route, RouteStop
+
+    places = {
+        name: Place.objects.create(name=name, region=region, lat=lat, lng=lng)
+        for name, region, lat, lng in [
+            ("Pune", "west", Decimal("18.5204"), Decimal("73.8567")),
+            ("Wardha", "vidarbha", Decimal("20.7453"), Decimal("78.6022")),
+            ("Chandrapur", "vidarbha", Decimal("19.9615"), Decimal("79.2961")),
+            ("Yavatmal", "vidarbha", Decimal("20.3888"), Decimal("78.1204")),
+        ]
+    }
+    verified = {"source": Leg.Source.MANUAL, "verified_at": START, "verified_by": driver}
+    legs = {
+        ("Pune", "Wardha"): Leg.objects.create(from_place=places["Pune"], to_place=places["Wardha"],
+                                               distance_km=Decimal("640.0"), tolls_inr=1100, typical_minutes=600, **verified),
+        ("Wardha", "Chandrapur"): Leg.objects.create(from_place=places["Wardha"], to_place=places["Chandrapur"],
+                                                     distance_km=Decimal("160.0"), tolls_inr=300, typical_minutes=180, **verified),
+        ("Pune", "Yavatmal"): Leg.objects.create(from_place=places["Pune"], to_place=places["Yavatmal"],
+                                                 distance_km=Decimal("620.0"), tolls_inr=1000, typical_minutes=620, **verified),
+        ("Yavatmal", "Chandrapur"): Leg.objects.create(from_place=places["Yavatmal"], to_place=places["Chandrapur"],
+                                                       distance_km=Decimal("170.0"), tolls_inr=150, typical_minutes=200),
+    }
+    via_wardha = Route.objects.create(name="Pune to Chandrapur via Wardha", slug="pune-chandrapur-wardha")
+    via_yavatmal = Route.objects.create(name="Pune to Chandrapur via Yavatmal", slug="pune-chandrapur-yavatmal")
+    for route, names in ((via_wardha, ["Pune", "Wardha", "Chandrapur"]), (via_yavatmal, ["Pune", "Yavatmal", "Chandrapur"])):
+        for i, name in enumerate(names):
+            RouteStop.objects.create(route=route, place=places[name], position=i)
+    return {"places": places, "legs": legs, "via_wardha": via_wardha, "via_yavatmal": via_yavatmal}
+
+
+@pytest.fixture
+def post_route_ride(driver, car, network, policy, clock):
+    """Post a ride on the verified via-Wardha route through the real service."""
+    from apps.rides.services import create_route_ride
+
+    def _post(**overrides):
+        p = network["places"]
+        args = dict(
+            route=network["via_wardha"], from_place=p["Pune"], to_place=p["Chandrapur"], vehicle=car,
+            departure_at=clock.now + timedelta(days=4), seats_offered=3, fare_inr=1750,
+            pickup={"name": "Shivajinagar bus stand"}, dropoff_point="Chandrapur bus stand", policy_ack=True,
+        )
+        args.update(overrides)
+        return create_route_ride(driver, **args)
+    return _post
+
+
+@pytest.fixture
 def diwali(db):
     return Season.objects.create(name="Diwali", starts_at=START - timedelta(days=1), ends_at=START + timedelta(days=20))

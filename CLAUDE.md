@@ -10,7 +10,9 @@ The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). Th
 
 - Built so far:
   - Phone OTP sign-in (hashed codes, 5 min expiry, 5 tries, per-phone and per-IP send limits), bearer tokens kept in an httpOnly cookie by the web app, profiles, saved cars, UPI ID.
-  - Ride posting with a maximum fare derived from `city_pairs` and estimated contribution limits, search, server-rendered ride pages with per-ride OG images and WhatsApp share.
+  - Route network (Phase 1 of `docs/ROUTE_NETWORK_SPEC.md`): places, verified legs and named via-routes in `api/apps/routes`; posting picks From/To, a via route and its stops, an exact pickup point (Mappls search, plain-text fallback), and is priced per leg with the 15% cap. Rides store the stops, distance and tolls they were priced on. Legacy `city_pairs` rides still work. Search matches a ride's own start and end only; stops along the way come in Phase 2.
+  - Optional advance: a percentage of the fare with no floor or ceiling, and drivers can switch it off. No-advance seats confirm when the driver accepts and never create payment or refund records.
+  - Server-rendered ride pages with per-ride OG images and WhatsApp share.
   - Full booking flow with row locking, UPI deep link, cancellation tiers, refill refunds, driver cancel with season strikes, reschedule rule, waitlist offers, reconfirmation, trip confirmation, no-show and dispute, refund received and overdue disputes, report and block, women-only (staff-verified), append-only reliability events with a materialised public record.
   - Notification rows + per-minute tick (Celery beat in prod, `manage.py run_scheduler` locally) delivering in-app, email and Web Push.
   - Passenger-only emergency trip links with hashed tokens, explicit revoke/replace, and expiry 24 hours after expected arrival.
@@ -18,7 +20,7 @@ The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). Th
   - Seat-wanted requests with route/date flexibility and deduplicated in-app/email/Web Push match alerts through the notification dispatcher.
   - Co-driver preference on ride posting, passenger/co-driver request and waitlist roles, licence self-attestation, booking labels, and a separate late-cancellation record. Co-driver verification and fare/legal rules remain open.
   - Django admin ops console: no-show rulings, reports, reliability corrections, women-only verification, policy versions, city pairs, seasons, audit log.
-  - 100 pytest tests in `api/tests` (one, the last-seat race, runs only on PostgreSQL).
+  - 146 pytest tests in `api/tests` (one, the last-seat race, runs only on PostgreSQL).
 - In progress: nothing.
 - Known issues / not done:
   - Tests have only run on SQLite so far. Run them against PostgreSQL before relying on the row-locking guarantees.
@@ -40,7 +42,7 @@ Not in the MVP (do not build unless asked):
 ## Hard rules
 
 1. **The app never holds money.** It generates UPI deep links (`upi://pay?pa=…&pn=…&am=…&cu=INR&tn=<booking code>`) and records claims ("I've paid", "Advance received", "Refund received"). No gateway integration.
-2. **Fare cap is a provisional product rule, not a legal determination.** The maximum is the lowest of estimated fair share plus the configured allowance, 25% of estimated trip cost, and 50% divided by seats offered, rounded down. Distance and tolls come from `city_pairs`; legal review and approved cost data are required.
+2. **Fares stay cost-sharing.** Suggested fare = (distance_km × fuel_cost_per_km + tolls) ÷ (seats offered + 1), summed over the route legs the trip covers. Driver may go at most 15% above it. Distance and tolls come from verified route legs (measured once, checked by a person; `source=demo` legs are refused outside DEBUG), never from a maps API at request time.
 3. **Contact details are private until confirmation.** Phone numbers, UPI IDs and car registration are visible only to confirmed co-travellers on the same ride.
 4. **Never store ID numbers.** ID verification stores only result, provider and date.
 5. **Every booking stores its `policy_version_id`.** Policy changes never apply retroactively.
@@ -52,7 +54,7 @@ Not in the MVP (do not build unless asked):
 
 Values live in `policy_versions` (current defaults shown).
 
-- Advance = 30% of seat fare, rounded to nearest ₹50, min ₹300, max ₹1,000. Paid passenger to driver directly.
+- Advance = 30% of seat fare, rounded to nearest ₹50 (at least one ₹50 step, never above the fare), no floor or ceiling since policy 2026-11-v2. Paid passenger to driver directly. Drivers may switch the advance off per ride; those seats confirm on acceptance and the refund tiers don't apply, but cancellations still create reliability events.
 - Seat confirms only when the driver taps "Advance received". Unpaid holds expire after 2 hours.
 
 Passenger cancels:
@@ -77,7 +79,7 @@ Exits: `declined` / `expired` (from requested), hold expiry (from accepted, afte
 
 ## Data model (summary)
 
-`users`, `vehicles`, `city_pairs`, `policy_versions`, `seasons`, `rides` (including co-driver preference), `bookings` (passenger/co-driver role and licence self-attestation timestamp), `payments` (records only), `waitlist_entries` (role preserved), `trip_confirmations`, `reliability_events` (append-only; corrections are new events), `vouches`, `reports`, `blocks`, `seat_wanted`, `notifications`, `audit_log`. The public reliability record is a materialised view over `reliability_events`. Full DDL is in the PRD; the Django models in `api/apps/*/models.py` are the implemented schema.
+`users`, `vehicles`, `city_pairs` (legacy), `places`, `legs`, `routes` + `route_stops`, `policy_versions`, `seasons`, `rides` (route, From/To places, priced stop snapshot, exact pickup, `advance_required`, co-driver preference), `bookings` (passenger/co-driver role and licence self-attestation timestamp), `payments` (records only), `waitlist_entries` (role preserved), `trip_confirmations`, `reliability_events` (append-only; corrections are new events), `vouches`, `reports`, `blocks`, `seat_wanted`, `notifications`, `audit_log`. The public reliability record is a materialised view over `reliability_events`. Full DDL is in the PRD; the Django models in `api/apps/*/models.py` are the implemented schema.
 
 ## Stack and architecture
 
@@ -127,3 +129,4 @@ Implementation decisions to keep:
 - Co-driver fare discount: fixed or per ride?
 - TextBee production rollout: confirm handset delivery, sender/telecom requirements, and monitoring
 - Sign-off on the decisions listed in `docs/PRODUCTION_PLAN.md`
+- Route network: which via-routes to launch with, measured leg distances and confirmed tolls, Mappls account and key (see `docs/ROUTE_NETWORK_SPEC.md`)

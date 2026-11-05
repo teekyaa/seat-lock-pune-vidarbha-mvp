@@ -51,6 +51,11 @@ def ride_url(ride):
 
 
 def cutoff_text(booking):
+    if booking.advance_inr == 0:
+        policy = booking.policy_version
+        c = cutoffs(booking.ride.departure_at, policy.full_refund_before_hours, policy.full_penalty_under_hours)
+        return (f"There's no advance on this ride. If plans change, cancel before {ist(c.full_refund_until)}: "
+                "a later cancellation shows on your record.")
     if booking.free_cancel_any_time:
         return "The driver moved the departure, so you can cancel with a full refund until departure."
     policy = booking.policy_version
@@ -79,7 +84,7 @@ def schedule_trip_reminders(booking):
     dep = ride.departure_at
     now = timezone.now()
     driver, passenger = ride.driver, booking.passenger
-    route = f"{ride.city_pair.origin} to {ride.city_pair.destination}"
+    route = f"{ride.origin} to {ride.destination}"
     when = ist(dep)
     url = booking_url(booking)
     key = f"{booking.code}:{int(dep.timestamp())}"

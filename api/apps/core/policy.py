@@ -31,14 +31,6 @@ def max_fare(suggested: int, cap_percent: int) -> int:
     return (suggested * (100 + cap_percent)) // 100
 
 
-def conservative_fare_cap(distance_km, tolls_inr, seats_offered, fuel_cost_per_km, allowance_inr):
-    if seats_offered < 1:
-        raise ValueError("seats_offered must be at least 1")
-    total = Decimal(distance_km) * Decimal(str(fuel_cost_per_km)) + Decimal(tolls_inr)
-    fair_share = total / Decimal(seats_offered + 1)
-    return int(min(fair_share + Decimal(allowance_inr), total / 4, total / (2 * seats_offered)))
-
-
 def advance_for(fare_inr: int, percent: int, round_to: int, minimum: int, maximum: int) -> int:
     """percent of fare, rounded to the nearest round_to, clamped to [minimum, maximum].
 
@@ -47,6 +39,18 @@ def advance_for(fare_inr: int, percent: int, round_to: int, minimum: int, maximu
     raw = Decimal(fare_inr) * Decimal(percent) / Decimal(100)
     rounded = _round_half_up(raw / Decimal(round_to)) * round_to
     return min(fare_inr, max(minimum, min(maximum, rounded)))
+
+
+def advance_percent_only(fare_inr: int, percent: int, round_to: int) -> int:
+    """Percentage of the fare rounded to the nearest round_to, with no floor or ceiling (spec D6).
+
+    A fare too small to round up still asks for one rounding unit, and never more than the fare.
+    """
+    if fare_inr <= 0:
+        return 0
+    raw = Decimal(fare_inr) * Decimal(percent) / Decimal(100)
+    rounded = _round_half_up(raw / Decimal(round_to)) * round_to
+    return min(fare_inr, rounded or round_to)
 
 
 def passenger_cancel_tier(hours_before_departure: float, full_refund_before: int, full_penalty_under: int) -> str:
