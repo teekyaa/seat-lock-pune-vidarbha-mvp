@@ -223,7 +223,7 @@ def alert_matching_seat_wanted(ride):
 
 
 def _schedule_seat_wanted_match(wanted, ride, seats_left):
-    route = f"{ride.city_pair.origin} to {ride.city_pair.destination}"
+    route = f"{ride.origin} to {ride.destination}"
     noun = "seat" if seats_left == 1 else "seats"
     notify.schedule(
         wanted.passenger,

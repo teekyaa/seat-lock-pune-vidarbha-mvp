@@ -87,7 +87,7 @@ export default async function BookingPage({ params }: { params: Promise<{ code: 
         <dl className="grid grid-cols-3 gap-3 text-sm">
           <div><dt className="text-muted">Code</dt><dd className="font-bold tracking-wide">{b.code}</dd></div>
           <div><dt className="text-muted">Fare</dt><dd className="font-bold tabular-nums">₹{b.fare_inr}</dd></div>
-          <div><dt className="text-muted">Advance</dt><dd className="font-bold tabular-nums">₹{b.advance_inr}</dd></div>
+          <div><dt className="text-muted">Advance</dt><dd className="font-bold tabular-nums">{b.advance_inr ? `₹${b.advance_inr}` : "None"}</dd></div>
         </dl>
         {b.seat_role === "co_driver" && <p className="mt-3 rounded-xl bg-paper p-3 text-sm">Licence is self-attested and has not been independently verified. The same fare and cancellation policy apply in this prototype.</p>}
         {b.note && <p className="mt-3 rounded-xl bg-paper p-3 text-sm">&ldquo;{b.note}&rdquo;</p>}

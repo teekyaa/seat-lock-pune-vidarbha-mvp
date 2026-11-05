@@ -11,7 +11,7 @@ class CityPairAdmin(admin.ModelAdmin):
 
 @admin.register(PolicyVersion)
 class PolicyVersionAdmin(admin.ModelAdmin):
-    list_display = ["label", "effective_from", "advance_percent", "fuel_cost_per_km", "fare_allowance_inr"]
+    list_display = ["label", "effective_from", "advance_percent", "fuel_cost_per_km", "fare_cap_percent"]
 
     def get_readonly_fields(self, request, obj=None):
         # A version that bookings depend on is frozen; publish a new one instead.

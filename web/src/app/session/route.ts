@@ -12,17 +12,29 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ detail: "Request is too large." }, { status: 413 });
   }
-  let phone, code;
+  let parsed: unknown;
   try {
-    ({ phone, code } = JSON.parse(body));
+    parsed = JSON.parse(body);
   } catch {
     return NextResponse.json({ detail: "Invalid request." }, { status: 400 });
   }
-  const res = await fetch(`${API_URL}/api/v1/auth/otp/verify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Forwarded-For": trustedClientIp(req) },
-    body: JSON.stringify({ phone, code }),
-  });
+  // Valid JSON is not enough: a bare string or array must not reach the API.
+  const { phone, code } = (parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}) as {
+    phone?: unknown; code?: unknown;
+  };
+  if (typeof phone !== "string" || typeof code !== "string") {
+    return NextResponse.json({ detail: "Invalid request." }, { status: 400 });
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/v1/auth/otp/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": trustedClientIp(req) },
+      body: JSON.stringify({ phone, code }),
+    });
+  } catch {
+    return NextResponse.json({ detail: "Could not reach the server. Please try again." }, { status: 502 });
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return NextResponse.json(data, { status: res.status });
   (await cookies()).set(TOKEN_COOKIE, data.token, {

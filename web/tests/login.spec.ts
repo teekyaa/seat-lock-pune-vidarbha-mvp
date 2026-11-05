@@ -32,6 +32,11 @@ test("session rejects malformed and oversized requests", async ({ request, baseU
   const headers = { Origin: new URL(baseURL!).origin, "Content-Type": "application/json" };
   const malformed = await request.post("/session", { headers, data: "{" });
   expect(malformed.status()).toBe(400);
+  // Valid JSON of the wrong shape, e.g. a bare string, is rejected too.
+  const wrongShape = await request.post("/session", { headers, data: JSON.stringify("hello") });
+  expect(wrongShape.status()).toBe(400);
+  const missingCode = await request.post("/session", { headers, data: { phone: "9000000001" } });
+  expect(missingCode.status()).toBe(400);
   const oversized = await request.post("/session", { headers, data: "x".repeat(5000) });
   expect(oversized.status()).toBe(413);
 });

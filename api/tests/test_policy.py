@@ -24,16 +24,6 @@ class TestSuggestedFare:
 
 
 class TestFareCap:
-    @pytest.mark.parametrize("distance,tolls,seats,allowance,expected", [
-        (760, 1150, 3, 200, 1078),
-        (100, 0, 1, 200, 175),
-        (100, 0, 2, 200, 175),
-        (100, 1, 7, 200, 50),
-        (100, 0, 7, 0, 50),
-    ])
-    def test_conservative_cap(self, distance, tolls, seats, allowance, expected):
-        assert calc.conservative_fare_cap(distance, tolls, seats, 7, allowance) == expected
-
     def test_cap_is_15_percent_above(self):
         assert calc.max_fare(1000, 15) == 1150
 

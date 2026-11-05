@@ -19,3 +19,7 @@ An ops admin or super admin may pause `signup.new_signups_enabled`; existing use
 - **Other requested kill switches:** Maintenance mode, read-only mode, payment/refund/payout controls, route pauses, WhatsApp, app-version settings and automatic risk restrictions are not implemented. No switch for those functions is presented as operational.
 
 Do not use this document as proof of compliance or as a substitute for a tested incident response plan.
+
+## Managing route legs before the dashboard covers them
+
+Route legs are measured and verified in the legacy Django admin. In production set `DJANGO_LEGACY_ADMIN_ENABLED=1` together with `ADMIN_IP_ALLOWLIST` (the app will not start with one and not the other), do the leg work at `/admin/routes/`, then turn it off again.
