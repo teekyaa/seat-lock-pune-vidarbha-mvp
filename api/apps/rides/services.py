@@ -4,7 +4,8 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from apps.core import policy as calc
-from apps.core.errors import DomainError, Forbidden
+from apps.core.errors import DomainError, Forbidden, ServiceUnavailable
+from apps.admin_dashboard.flags import is_enabled
 from apps.core.models import CityPair, PolicyVersion, audit
 from apps.core.timefmt import ist
 from apps.trust.services import alert_matching_seat_wanted, posting_blocked_until
@@ -39,6 +40,8 @@ def advance_for(fare_inr, policy, required=True):
 
 def availability(ride: Ride):
     """Seats left after holds and open waitlist offers. Holds reserve a seat (plan decision 1)."""
+    if hasattr(ride, "seats_held") and hasattr(ride, "offers_open"):
+        return max(0, ride.seats_offered - ride.seats_held - ride.offers_open)
     now = timezone.now()
     held = ride.bookings.filter(status__in=HOLDING).count()
     offers = ride.waitlist.filter(status="offered", offer_expires_at__gt=now).count()
@@ -56,6 +59,9 @@ def with_seat_counts(qs):
 
 
 def _check_driver(driver, vehicle, departure_at, seats_offered, women_only, policy_ack, advance_required, now, policy):
+    # Operations switch from the admin dashboard; applies to every way of posting a ride.
+    if not is_enabled("rides.new_ride_creation_enabled"):
+        raise ServiceUnavailable("New ride posting is temporarily unavailable.", "ride_posting_paused")
     if not driver.profile_complete:
         raise DomainError("Finish your profile before posting a ride.", "profile_incomplete")
     if not policy_ack:

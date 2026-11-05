@@ -25,6 +25,10 @@ class Conflict(DomainError):
     status_code = status.HTTP_409_CONFLICT
 
 
+class ServiceUnavailable(DomainError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+
 def exception_handler(exc, context):
     if isinstance(exc, DomainError):
         return Response({"detail": exc.message, "code": exc.code}, status=exc.status_code)

@@ -52,7 +52,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Sign in with a seeded test number (`9000010001` driver Aditi, `9000010002` passenger Rahul, `9000010003` passenger Neha). With `OTP_DEBUG_ECHO=1` in `api/.env`, the code appears on the sign-in screen and in the API console. No SMS is sent.
+Open http://localhost:3000. Sign in with a seeded test number (`9000010001` driver Aditi, `9000010002` passenger Rahul, `9000010003` passenger Neha). For real SMS, set `TEXTBEE_API_KEY` and `TEXTBEE_DEVICE_ID` in the Git-ignored `api/.env`; Django selects the TextBee backend automatically. With TextBee configured, OTPs are never echoed in API responses or console logs. Without TextBee, local development uses the console backend; `OTP_DEBUG_ECHO=1` can show its code on the sign-in screen. Use Redis for shared OTP limits when running multiple API processes.
 
 ### Tests
 
@@ -88,6 +88,7 @@ Passengers can post an active route/date request for up to seven seats, with an 
 Drivers pick **From** and **To** from our own place list, choose a via route (for example via Wardha or via Yavatmal), untick towns they won't stop in, and pick an exact pickup point. The fare is the cost share summed over the route's legs, with the 15% cap. Rides keep the stops, distance and tolls they were priced on.
 
 - **Places, legs and routes** are managed in Django admin (`Routes` section). `seed_reference_data` creates the places and draft routes with **empty** leg figures. Fill them with the admin action *Measure distance and time with Mappls*, check each one, then *Mark verified*. Unverified legs block posting on that route.
+- **In production** the legacy Django admin is off by default. Turn it on for route work with `DJANGO_LEGACY_ADMIN_ENABLED=1` and an `ADMIN_IP_ALLOWLIST`; see `docs/admin/RUNBOOK.md`.
 - **Mappls**: set `MAPPLS_API_KEY` in `api/.env`. It powers the exact-pickup search and leg measurement, server-side only. Without it, the pickup field becomes plain text and legs are entered by hand.
 - **Demo figures**: `seed_demo` (DEBUG only) fills legs with clearly synthetic `source=demo` figures so the flow can be tried locally. The app refuses demo legs outside DEBUG.
 - **Optional advance**: drivers can switch the advance off. Those seats confirm when the driver accepts, nothing is refunded, and cancellations still count on the public record.
@@ -106,7 +107,7 @@ The PRD does not decide licence evidence, driving-duty and insurance terms, whet
 
 ## Not ready for real users yet
 
-- **SMS provider not chosen.** OTPs go through a pluggable backend. Production needs a DLT-registered Indian provider wired into `SMS_BACKEND`.
+- **SMS rollout needs validation.** TextBee is integrated as the OTP gateway. Confirm real handset delivery, sender/telecom requirements, and operational monitoring before public use.
 - **Corridor figures are placeholders.** Distances, tolls and fuel cost per km in `seed_reference_data` must be replaced with approved values.
 - **Profile photos** are a URL field only. Object storage is not set up.
 - **ID verification provider** is not built.

@@ -64,3 +64,41 @@ def test_only_one_accept_wins_the_last_seat():
         t.join()
     assert results.count("ok") == 1
     assert ride.bookings.filter(status__in=Booking.HOLDING).count() == 1
+
+
+@pytest.mark.stress
+def test_one_hundred_requests_compete_for_last_seat():
+    """Run against an isolated PostgreSQL instance with at least 110 connections."""
+    ride, driver, existing = _setup()
+    now = timezone.now()
+    requests = []
+    for i in range(100):
+        passenger = User.objects.create_user(f"+9188{i:08d}", name=f"Passenger {i}", hometown="Pune",
+                                             terms_accepted_at=now)
+        requests.append(Booking.objects.create(ride=ride, passenger=passenger, policy_version=ride.policy_version,
+                                               fare_inr=1000, advance_inr=300, passenger_policy_ack_at=now,
+                                               request_expires_at=now + timedelta(hours=12)))
+    barrier = threading.Barrier(100, timeout=30)
+    results = []
+
+    def worker(booking):
+        try:
+            barrier.wait()
+            services.accept(booking, driver)
+            results.append('ok')
+        except Conflict:
+            results.append('full')
+        except Exception as exc:
+            results.append(type(exc).__name__)
+        finally:
+            connections.close_all()
+
+    threads = [threading.Thread(target=worker, args=(booking,)) for booking in requests]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=120)
+    assert all(not thread.is_alive() for thread in threads)
+    assert results.count('ok') == 1
+    assert results.count('full') == 99, results
+    assert ride.bookings.filter(status__in=Booking.HOLDING).count() == 1

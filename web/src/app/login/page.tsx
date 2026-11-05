@@ -5,10 +5,11 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { RouteMark } from "@/components/RouteMark";
 import { TopBar } from "@/components/TopBar";
 import { call } from "@/lib/client";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 function LoginForm() {
   const router = useRouter();
-  const next = useSearchParams().get("next") || "/";
+  const next = safeRedirect(useSearchParams().get("next"));
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -29,11 +30,11 @@ function LoginForm() {
     setBusy(true);
     setError("");
     try {
-      const r = await call<{ phone: string; debug_code?: string }>("/auth/otp/request", "POST", { phone });
+      const r = await call<{ phone: string; debug_code?: string; resend_after: number }>("/auth/otp/request", "POST", { phone });
       setSentTo(r.phone);
       setDevCode(r.debug_code ?? null);
       setCode("");
-      setWait(30);
+      setWait(r.resend_after);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -46,20 +47,25 @@ function LoginForm() {
     verifying.current = true;
     setBusy(true);
     setError("");
+    try {
     const res = await fetch("/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: sentTo, code: value }),
     });
     const data = await res.json().catch(() => ({}));
-    verifying.current = false;
-    setBusy(false);
     if (!res.ok) {
       setCode("");
       return setError(data.detail ?? "That didn't work. Try again.");
     }
     router.replace(data.user.profile_complete ? next : `/me?next=${encodeURIComponent(next)}`);
     router.refresh();
+    } catch {
+      setError("Could not connect. Please try again.");
+    } finally {
+      verifying.current = false;
+      setBusy(false);
+    }
   }
 
   const digits = phone.replace(/\D/g, "");

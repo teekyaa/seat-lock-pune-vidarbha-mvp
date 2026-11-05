@@ -16,7 +16,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core import policy as calc
-from apps.core.errors import Conflict, DomainError, Forbidden
+from apps.core.errors import Conflict, DomainError, Forbidden, ServiceUnavailable
+from apps.admin_dashboard.flags import is_enabled
 from apps.core.models import audit
 from apps.core.timefmt import hours_between, ist
 from apps.notifications import services as notify
@@ -38,11 +39,13 @@ def _now():
 
 
 def _lock_ride(ride_id):
-    return Ride.objects.select_for_update().select_related("city_pair", "from_place", "to_place", "driver", "policy_version").get(pk=ride_id)
+    return Ride.objects.select_for_update(of=("self",)).select_related(
+        "city_pair", "from_place", "to_place", "driver", "policy_version"
+    ).get(pk=ride_id)
 
 
 def _lock_booking(booking_id):
-    return Booking.objects.select_for_update().select_related(
+    return Booking.objects.select_for_update(of=("self",)).select_related(
         "ride", "ride__driver", "ride__city_pair", "passenger", "policy_version"
     ).get(pk=booking_id)
 
@@ -126,6 +129,8 @@ def _create_refund(booking, amount, now):
 
 def request_seat(ride, passenger, *, note="", policy_ack=False, role=Booking.Role.PASSENGER,
                  co_driver_license_ack=False):
+    if not is_enabled("bookings.new_bookings_enabled"):
+        raise ServiceUnavailable("New bookings are temporarily unavailable.", "bookings_paused")
     now = _now()
     with transaction.atomic():
         ride = _lock_ride(ride.pk)
@@ -280,6 +285,8 @@ def confirm_advance(booking, driver):
         _require_driver(booking, driver)
         if booking.status not in (S.ACCEPTED, S.ADVANCE_CLAIMED):
             raise Conflict("This booking is not waiting for an advance.")
+        if booking.status == S.ACCEPTED and booking.hold_expires_at and booking.hold_expires_at <= now:
+            raise Conflict("This hold has lapsed. Request the seat again if it is still free.", "hold_expired")
         if ride.status != Ride.Status.OPEN:
             raise Conflict("This ride is no longer open.")
         if ride.bookings.filter(status=S.CONFIRMED).exclude(pk=booking.pk).count() >= ride.seats_offered:
@@ -511,6 +518,8 @@ def reschedule(ride, driver, new_departure_at):
 # ---------------------------------------------------------------- waitlist
 
 def join_waitlist(ride, passenger, *, role=Booking.Role.PASSENGER, co_driver_license_ack=False):
+    if not is_enabled("bookings.new_bookings_enabled"):
+        raise ServiceUnavailable("New bookings are temporarily unavailable.", "bookings_paused")
     now = _now()
     with transaction.atomic():
         ride = _lock_ride(ride.pk)
@@ -554,6 +563,8 @@ def join_waitlist(ride, passenger, *, role=Booking.Role.PASSENGER, co_driver_lic
 def offer_waitlist(ride, now=None):
     """Offer each free seat to the next person waiting. Call with the ride row locked."""
     now = now or _now()
+    if not is_enabled("bookings.new_bookings_enabled"):
+        return []
     ride.waitlist.filter(status=WaitlistEntry.Status.OFFERED, offer_expires_at__lte=now).update(
         status=WaitlistEntry.Status.EXPIRED
     )
@@ -594,6 +605,8 @@ def offer_waitlist(ride, now=None):
 
 
 def accept_waitlist_offer(entry, passenger, *, policy_ack=False):
+    if not is_enabled("bookings.new_bookings_enabled"):
+        raise ServiceUnavailable("New bookings are temporarily unavailable.", "bookings_paused")
     now = _now()
     with transaction.atomic():
         ride = _lock_ride(entry.ride_id)

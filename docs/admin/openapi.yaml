@@ -1,0 +1,751 @@
+openapi: 3.0.3
+info:
+  title: Seat Lock Admin API
+  version: 0.1.0
+paths:
+  /api/v1/admin/audit-logs:
+    get:
+      operationId: audit_logs_retrieve
+      parameters:
+      - in: query
+        name: action
+        schema:
+          type: string
+      - in: query
+        name: admin_id
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Page size from 1 to 100.
+      - in: query
+        name: resource_id
+        schema:
+          type: string
+      - in: query
+        name: resource_type
+        schema:
+          type: string
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+      tags:
+      - audit-logs
+      security:
+      - AdminSession: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAuditPage'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/auth/login:
+    post:
+      operationId: auth_login_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/auth/logout:
+    post:
+      operationId: auth_logout_create
+      tags:
+      - auth
+      security:
+      - AdminSession: []
+      responses:
+        '204':
+          description: No response body
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/auth/reauthenticate:
+    post:
+      operationId: auth_reauthenticate_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReauthentication'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminReauthentication'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminReauthentication'
+        required: true
+      security:
+      - AdminSession: []
+      responses:
+        '204':
+          description: No response body
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/feature-flags:
+    get:
+      operationId: feature_flags_list
+      tags:
+      - feature-flags
+      security:
+      - AdminSession: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FeatureFlag'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/feature-flags/{key}/change:
+    post:
+      operationId: feature_flags_change_create
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - feature-flags
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeatureFlagUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FeatureFlagUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FeatureFlagUpdate'
+        required: true
+      security:
+      - AdminSession: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlag'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/feature-flags/{key}/history:
+    get:
+      operationId: feature_flags_history_list
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - feature-flags
+      security:
+      - AdminSession: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FeatureFlagChange'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/me:
+    get:
+      operationId: me_retrieve
+      tags:
+      - me
+      security:
+      - AdminSession: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminIdentity'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/overview:
+    get:
+      operationId: overview_retrieve
+      tags:
+      - overview
+      security:
+      - AdminSession: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOverview'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/settings:
+    get:
+      operationId: settings_list
+      tags:
+      - settings
+      security:
+      - AdminSession: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlatformSetting'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+  /api/v1/admin/settings/{key}/change:
+    post:
+      operationId: settings_change_create
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformSettingUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PlatformSettingUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PlatformSettingUpdate'
+        required: true
+      security:
+      - AdminSession: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSetting'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+          description: ''
+components:
+  schemas:
+    AdminAuditEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        admin_id:
+          type: string
+          format: uuid
+          nullable: true
+        admin_name:
+          type: string
+          nullable: true
+        admin_role:
+          type: string
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        before: {}
+        after: {}
+        reason:
+          type: string
+        request_id:
+          type: string
+          format: uuid
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - action
+      - admin_id
+      - admin_name
+      - admin_role
+      - after
+      - before
+      - created_at
+      - id
+      - ip_address
+      - reason
+      - request_id
+      - resource_id
+      - resource_type
+      - user_agent
+    AdminAuditPage:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAuditEntry'
+        next_cursor:
+          type: string
+          nullable: true
+      required:
+      - next_cursor
+      - results
+    AdminError:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/AdminErrorDetail'
+      required:
+      - error
+    AdminErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+          format: uuid
+        details: {}
+      required:
+      - code
+      - details
+      - message
+      - request_id
+    AdminIdentity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+      required:
+      - id
+      - name
+      - permissions
+      - role
+    AdminLoginIdentity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+      required:
+      - id
+      - name
+      - role
+    AdminLoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 1024
+        code:
+          type: string
+          writeOnly: true
+          maxLength: 6
+      required:
+      - code
+      - email
+      - password
+    AdminLoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        admin:
+          $ref: '#/components/schemas/AdminLoginIdentity'
+      required:
+      - admin
+      - token
+    AdminOverview:
+      type: object
+      properties:
+        as_of:
+          type: string
+          format: date-time
+        rides_scheduled_today:
+          type: integer
+          minimum: 0
+        rides_next_24_hours:
+          type: integer
+          minimum: 0
+        held_seats:
+          type: integer
+          minimum: 0
+        open_reports:
+          type: integer
+          minimum: 0
+        new_signups_today:
+          type: integer
+          minimum: 0
+      required:
+      - as_of
+      - held_seats
+      - new_signups_today
+      - open_reports
+      - rides_next_24_hours
+      - rides_scheduled_today
+    AdminReauthentication:
+      type: object
+      properties:
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 1024
+        code:
+          type: string
+          writeOnly: true
+          maxLength: 6
+      required:
+      - code
+      - password
+    FeatureFlag:
+      type: object
+      properties:
+        key:
+          type: string
+        description:
+          type: string
+        value:
+          type: boolean
+        default:
+          type: boolean
+        is_critical:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_by:
+          type: string
+          nullable: true
+      required:
+      - default
+      - description
+      - is_critical
+      - key
+      - updated_at
+      - updated_by
+      - value
+    FeatureFlagChange:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        old_value:
+          type: boolean
+        new_value:
+          type: boolean
+        changed_by:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - changed_by
+      - created_at
+      - id
+      - new_value
+      - old_value
+      - reason
+    FeatureFlagUpdate:
+      type: object
+      properties:
+        value:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 1000
+        confirmation:
+          type: string
+          maxLength: 120
+      required:
+      - confirmation
+      - reason
+      - value
+    PlatformSetting:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: integer
+          nullable: true
+        description:
+          type: string
+        minimum:
+          type: integer
+        maximum:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - description
+      - key
+      - maximum
+      - minimum
+      - updated_at
+      - value
+    PlatformSettingUpdate:
+      type: object
+      properties:
+        value:
+          type: integer
+          nullable: true
+        reason:
+          type: string
+          maxLength: 1000
+      required:
+      - reason
+      - value
+  securitySchemes:
+    AdminSession:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Separate admin session token using the AdminBearer authorization
+        scheme.

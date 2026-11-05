@@ -4,6 +4,7 @@ All environment-specific values come from environment variables. See
 `.env.example` for the full list.
 """
 import os
+import ipaddress
 from pathlib import Path
 
 import dj_database_url
@@ -39,9 +40,27 @@ DEBUG = env_bool("DJANGO_DEBUG", False)
 SECRET_KEY = env("DJANGO_SECRET_KEY") or ("dev-insecure-secret-key" if DEBUG else None)
 if not SECRET_KEY:
     raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is off.")
+if not DEBUG and (len(SECRET_KEY) < 50 or SECRET_KEY == "change-me"):
+    raise RuntimeError("Production requires a strong DJANGO_SECRET_KEY of at least 50 characters.")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+# Legacy Django admin does not enforce the separate operator TOTP policy.
+LEGACY_ADMIN_ENABLED = env_bool("DJANGO_LEGACY_ADMIN_ENABLED", DEBUG)
+ADMIN_DASHBOARD_ENABLED = env_bool("ADMIN_DASHBOARD_ENABLED", DEBUG)
+try:
+    ADMIN_IP_ALLOWLIST = [ipaddress.ip_network(item, strict=False) for item in env_list("ADMIN_IP_ALLOWLIST")]
+except ValueError as exc:
+    raise RuntimeError("ADMIN_IP_ALLOWLIST must contain valid IP addresses or CIDR ranges.") from exc
+if LEGACY_ADMIN_ENABLED and not DEBUG and not ADMIN_IP_ALLOWLIST:
+    # Route legs are still managed in the legacy admin; in production it must sit behind an allowlist.
+    raise RuntimeError("DJANGO_LEGACY_ADMIN_ENABLED in production requires ADMIN_IP_ALLOWLIST.")
+if ADMIN_DASHBOARD_ENABLED and not DEBUG:
+    from cryptography.fernet import Fernet
+    try:
+        Fernet(env("ADMIN_TOTP_ENCRYPTION_KEY", "").encode("ascii"))
+    except (ValueError, TypeError, UnicodeError) as exc:
+        raise RuntimeError("ADMIN_TOTP_ENCRYPTION_KEY must be a valid Fernet key when the admin dashboard is enabled.") from exc
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -51,12 +70,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "drf_spectacular",
     "apps.accounts",
     "apps.core",
     "apps.rides",
     "apps.bookings",
     "apps.trust",
     "apps.notifications",
+    "apps.admin_dashboard",
     "apps.routes",
 ]
 
@@ -67,6 +88,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.admin_dashboard.legacy_admin.LegacyAdminAllowlistMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -98,6 +120,8 @@ DATABASES = {
         conn_max_age=int(env("DB_CONN_MAX_AGE", "60")),
     )
 }
+if not DEBUG and DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
+    raise RuntimeError("Production requires a PostgreSQL DATABASE_URL.")
 
 AUTH_USER_MODEL = "accounts.User"
 AUTH_PASSWORD_VALIDATORS = [
@@ -117,19 +141,24 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+DATA_UPLOAD_MAX_MEMORY_SIZE = 65536
 
 REDIS_URL = env("REDIS_URL")
+if not DEBUG and not REDIS_URL:
+    raise RuntimeError("Production requires REDIS_URL for shared rate limiting and background jobs.")
 if REDIS_URL:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": REDIS_URL}}
 else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.auth.BearerTokenAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "EXCEPTION_HANDLER": "apps.core.errors.exception_handler",
     "UNAUTHENTICATED_USER": None,
 }
+SPECTACULAR_SETTINGS = {"TITLE": "Seat Lock Admin API", "VERSION": "0.1.0"}
 
 # Celery: broker is Redis. Beat runs one tick per minute (see apps.notifications.tasks).
 CELERY_BROKER_URL = REDIS_URL or "memory://"
@@ -143,17 +172,34 @@ CELERY_BEAT_SCHEDULE = {
 AUTH_TOKEN_TTL_DAYS = int(env("AUTH_TOKEN_TTL_DAYS", "30"))
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
+OTP_VERIFY_ATTEMPTS_PER_IP = 30
+OTP_VERIFY_WINDOW_SECONDS = 900
 OTP_SENDS_PER_PHONE = 3  # per OTP_SEND_WINDOW_SECONDS
 OTP_SENDS_PER_IP = 10
 OTP_SEND_WINDOW_SECONDS = 900
-# Echo the OTP in the API response. Only ever for local development.
-OTP_DEBUG_ECHO = DEBUG and env_bool("OTP_DEBUG_ECHO", False)
+OTP_RESEND_COOLDOWN_SECONDS = 60
+# Only trust forwarding headers from explicitly configured reverse proxies.
+OTP_TRUSTED_PROXY_IPS = env_list("OTP_TRUSTED_PROXY_IPS")
 
 # Messaging
-SMS_BACKEND = env("SMS_BACKEND", "apps.notifications.channels.ConsoleSMSBackend")
+TEXTBEE_API_KEY = env("TEXTBEE_API_KEY", "")
+TEXTBEE_DEVICE_ID = env("TEXTBEE_DEVICE_ID", "")
+SMS_BACKEND = env("SMS_BACKEND") or (
+    "apps.notifications.textbee.TextBeeSMSBackend"
+    if TEXTBEE_API_KEY or TEXTBEE_DEVICE_ID
+    else "apps.notifications.channels.ConsoleSMSBackend" if DEBUG
+    else "apps.notifications.channels.UnconfiguredSMSBackend"
+)
+# Never return a code when a real SMS gateway is configured, even in DEBUG.
+OTP_DEBUG_ECHO = (
+    DEBUG and env_bool("OTP_DEBUG_ECHO", False)
+    and SMS_BACKEND == "apps.notifications.channels.ConsoleSMSBackend"
+    and not (TEXTBEE_API_KEY or TEXTBEE_DEVICE_ID)
+)
 EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 EMAIL_HOST = env("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(env("EMAIL_PORT", "587"))
+EMAIL_TIMEOUT = 10
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
@@ -173,7 +219,8 @@ MAPPLS_TIMEOUT_SECONDS = 8
 WEB_BASE_URL = env("WEB_BASE_URL", "http://localhost:3000")
 
 if not DEBUG:
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    if env_bool("DJANGO_TRUST_PROXY_HEADERS", False):
+        SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", True)
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -183,6 +230,9 @@ if not DEBUG:
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "formatters": {"admin_json": {"()": "apps.admin_dashboard.logging.AdminJSONFormatter"}},
+    "handlers": {"console": {"class": "logging.StreamHandler"},
+                 "admin_console": {"class": "logging.StreamHandler", "formatter": "admin_json"}},
+    "loggers": {"seatlock.admin": {"handlers": ["admin_console"], "level": "INFO", "propagate": False}},
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
 }

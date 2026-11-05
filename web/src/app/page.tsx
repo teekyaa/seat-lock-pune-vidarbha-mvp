@@ -47,6 +47,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
     <div className="pad-tabbar">
       <PageHeader title="Find a seat" subtitle="Cost-sharing drives between Pune and Vidarbha" />
 
+      {process.env.NODE_ENV === "development" && (
+        <Link href="/control/login" className="mb-4 block rounded-2xl bg-mile-wash p-4 text-sm font-bold text-brand">
+          Admin dashboard · local testing
+        </Link>
+      )}
+
       {me && !me.profile_complete && (
         <Link href="/me?next=/" className="mb-4 flex items-center justify-between rounded-2xl bg-mile-wash p-4 text-sm">
           <span><b>Finish your profile</b> to book or offer a ride.</span>

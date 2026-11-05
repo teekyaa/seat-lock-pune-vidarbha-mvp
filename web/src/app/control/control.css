@@ -1,0 +1,8 @@
+body:has(.control-shell) .site-content { max-width: 80rem; }
+.control-shell { --control-bg: #f2f4f1; --control-card: #fff; --control-text: #17251c; --control-muted: #56665d; --control-line: #d5ded8; color: var(--control-text); background: var(--control-bg); min-height: 100dvh; }
+.control-shell[data-theme="dark"] { --control-bg: #111c16; --control-card: #1c2b22; --control-text: #f2f8f3; --control-muted: #c5d2c8; --control-line: #405347; color-scheme: dark; }
+.control-card { background: var(--control-card); border: 1px solid var(--control-line); border-radius: 1rem; }
+.control-muted { color: var(--control-muted); }
+.control-button { border: 1px solid var(--control-line); border-radius: .75rem; padding: .65rem 1rem; font-weight: 700; background: var(--control-card); color: var(--control-text); }
+.control-button:focus-visible, .control-shell a:focus-visible, .control-shell input:focus-visible { outline: 3px solid #2b9d57; outline-offset: 3px; }
+.control-input { width: 100%; min-height: 3rem; padding: .7rem; border: 1px solid var(--control-line); border-radius: .75rem; background: var(--control-card); color: var(--control-text); }

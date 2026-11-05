@@ -14,7 +14,7 @@ const TABS = [
 
 // Pushed screens (a ride, a booking, posting, sign-in) hide the tab bar and use a back button
 // plus their own sticky action bar, the way native iOS and Android navigation stacks work.
-const HIDDEN = [/^\/r\//, /^\/bookings\/.+/, /^\/rides\/new/, /^\/login/];
+const HIDDEN = [/^\/r\//, /^\/bookings\/.+/, /^\/rides\/new/, /^\/login/, /^\/control(?:\/|$)/];
 
 export function TabBar({ unread }: { unread: number }) {
   const path = usePathname();

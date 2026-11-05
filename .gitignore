@@ -22,4 +22,10 @@ db.sqlite3
 # Env
 .env
 .env.local
+api/.loadtest/
+web/test-results/
+web/playwright-report/
+web/.next-admin-e2e/
+api/.admin-browser-test.sqlite3
+/.admin-postgres-test/
 .DS_Store

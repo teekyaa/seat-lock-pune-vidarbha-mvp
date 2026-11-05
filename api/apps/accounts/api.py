@@ -13,8 +13,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.errors import Conflict, DomainError
-from apps.notifications.channels import sms_backend
+from apps.core.errors import Conflict, DomainError, ServiceUnavailable
+from apps.notifications.channels import SMSDeliveryError, sms_backend
+from apps.admin_dashboard.flags import is_enabled
 from apps.trust.services import reliability_for, vouch_profile
 
 from .auth import hash_otp, hash_token, issue_token
@@ -22,6 +23,8 @@ from .models import AuthToken, OTPChallenge, PushSubscription, User, Vehicle
 
 
 def normalise_phone(raw):
+    if not isinstance(raw, str):
+        raise DomainError("Enter a 10 digit Indian mobile number.", "invalid_phone")
     digits = re.sub(r"\D", "", raw or "")
     if len(digits) == 10:
         digits = "91" + digits
@@ -38,8 +41,11 @@ def _rate_limit(key, limit, window):
 
 
 def client_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return forwarded.split(",")[0].strip() or request.META.get("REMOTE_ADDR", "")
+    remote = request.META.get("REMOTE_ADDR", "")
+    if remote in settings.OTP_TRUSTED_PROXY_IPS:
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        return forwarded.split(",")[0].strip() or remote
+    return remote
 
 
 class MeSerializer(serializers.ModelSerializer):
@@ -107,15 +113,29 @@ class OTPRequestView(APIView):
                 {"detail": "Too many codes requested. Please wait 15 minutes and try again.", "code": "rate_limited"},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-        code = f"{secrets.randbelow(1_000_000):06d}"
-        with transaction.atomic():
-            OTPChallenge.objects.filter(phone=phone, consumed_at__isnull=True).update(consumed_at=timezone.now())
-            OTPChallenge.objects.create(
-                phone=phone, code_hash=hash_otp(phone, code),
-                expires_at=timezone.now() + timedelta(seconds=settings.OTP_TTL_SECONDS),
+        cooldown_key = f"otp:cooldown:{phone}"
+        if not cache.add(cooldown_key, 1, settings.OTP_RESEND_COOLDOWN_SECONDS):
+            return Response(
+                {"detail": "Please wait 60 seconds before requesting another code.", "code": "otp_cooldown",
+                 "retry_after": settings.OTP_RESEND_COOLDOWN_SECONDS},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-        sms_backend().send_otp(phone, code)
-        body = {"phone": phone, "expires_in": settings.OTP_TTL_SECONDS}
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        try:
+            with transaction.atomic():
+                challenge = OTPChallenge.objects.create(
+                    phone=phone, code_hash=hash_otp(phone, code),
+                    expires_at=timezone.now() + timedelta(seconds=settings.OTP_TTL_SECONDS),
+                )
+                sms_backend().send_otp(phone, code)
+                OTPChallenge.objects.filter(phone=phone, consumed_at__isnull=True).exclude(pk=challenge.pk).update(
+                    consumed_at=timezone.now()
+                )
+        except SMSDeliveryError:
+            cache.delete(cooldown_key)
+            raise ServiceUnavailable("We couldn't send a code right now. Please try again.", "sms_unavailable") from None
+        body = {"phone": phone, "expires_in": settings.OTP_TTL_SECONDS,
+                "resend_after": settings.OTP_RESEND_COOLDOWN_SECONDS}
         if settings.OTP_DEBUG_ECHO:
             body["debug_code"] = code
         return Response(body)
@@ -125,6 +145,10 @@ class OTPVerifyView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if not _rate_limit(f"otp:verify:ip:{client_ip(request)}", settings.OTP_VERIFY_ATTEMPTS_PER_IP,
+                           settings.OTP_VERIFY_WINDOW_SECONDS):
+            return Response({"detail": "Too many verification attempts. Please try again later.",
+                             "code": "rate_limited"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         phone = normalise_phone(request.data.get("phone"))
         code = str(request.data.get("code", "")).strip()
         error = None
@@ -147,10 +171,14 @@ class OTPVerifyView(APIView):
                     error = DomainError("That code doesn't match. Check the SMS and try again.", "otp_wrong")
                 challenge.save(update_fields=["attempts", "consumed_at"])
             if error is None:
-                user, created = User.objects.get_or_create(phone=phone)
-                if created:
-                    user.set_unusable_password()
-                    user.save()
+                user = User.objects.filter(phone=phone).first()
+                if user is None and not is_enabled("signup.new_signups_enabled"):
+                    error = ServiceUnavailable("New registrations are temporarily unavailable.", "signup_paused")
+                else:
+                    user, created = User.objects.get_or_create(phone=phone)
+                    if created:
+                        user.set_unusable_password()
+                        user.save()
         if error:
             raise error
         if not user.is_active:
@@ -210,8 +238,11 @@ class PushSubscriptionView(APIView):
     def post(self, request):
         keys = request.data.get("keys") or {}
         endpoint = request.data.get("endpoint")
-        if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+        from apps.notifications.channels import valid_push_endpoint
+        if not isinstance(keys, dict) or not valid_push_endpoint(endpoint) or not keys.get("p256dh") or not keys.get("auth"):
             raise DomainError("That push subscription is incomplete.")
+        if PushSubscription.objects.filter(endpoint=endpoint).exclude(user=request.user).exists():
+            raise Forbidden("That push subscription belongs to another account.")
         PushSubscription.objects.update_or_create(
             endpoint=endpoint, defaults={"user": request.user, "p256dh": keys["p256dh"], "auth": keys["auth"]}
         )
