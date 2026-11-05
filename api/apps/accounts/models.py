@@ -87,7 +87,11 @@ class Vehicle(models.Model):
 
 class OTPChallenge(models.Model):
     phone = models.CharField(max_length=13, db_index=True)
-    code_hash = models.CharField(max_length=64)
+    # Empty when the provider generates and checks the code itself (VerifyNow).
+    code_hash = models.CharField(max_length=64, blank=True)
+    channel = models.CharField(max_length=10, blank=True)  # "whatsapp" or "sms"
+    backend = models.CharField(max_length=120, blank=True)  # dotted path of the sender that delivered it
+    provider_ref = models.CharField(max_length=120, blank=True)  # provider message or verification id
     expires_at = models.DateTimeField()
     attempts = models.PositiveSmallIntegerField(default=0)
     consumed_at = models.DateTimeField(null=True, blank=True)
@@ -110,3 +114,35 @@ class PushSubscription(models.Model):
     p256dh = models.CharField(max_length=200)
     auth = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class OTPAbuseFlag(models.Model):
+    """A phone number or IP address that kept hitting OTP limits. One row per subject.
+
+    Hits within OTP_FLAG_WINDOW_HOURS accumulate; enough of them blocks code requests until
+    blocked_until. Staff review flags in admin and can unblock. IPs block for a shorter time because
+    mobile carriers share one address across many people.
+    """
+
+    class Kind(models.TextChoices):
+        PHONE = "phone", "Phone number"
+        IP = "ip", "IP address"
+
+    kind = models.CharField(max_length=5, choices=Kind.choices)
+    value = models.CharField(max_length=64)
+    reason = models.CharField(max_length=40)  # latest limit hit
+    hits = models.PositiveIntegerField(default=0)  # within the current window
+    total_hits = models.PositiveIntegerField(default=0)
+    first_seen = models.DateTimeField()
+    last_seen = models.DateTimeField()
+    blocked_until = models.DateTimeField(null=True, blank=True)
+    times_blocked = models.PositiveIntegerField(default=0)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    note = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["kind", "value"], name="otp_abuse_flag_subject")]
+        indexes = [models.Index(fields=["-last_seen"], name="otp_abuse_flag_recent")]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.value}"

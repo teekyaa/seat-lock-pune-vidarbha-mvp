@@ -1,4 +1,5 @@
 import hmac
+import logging
 import re
 import secrets
 from datetime import timedelta
@@ -13,13 +14,17 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.errors import Conflict, DomainError, ServiceUnavailable
-from apps.notifications.channels import SMSDeliveryError, sms_backend
+from apps.core.errors import Conflict, DomainError, Forbidden, ServiceUnavailable
+from apps.core.timefmt import ist
+from apps.notifications.channels import SMSDeliveryError
 from apps.admin_dashboard.flags import is_enabled
 from apps.trust.services import reliability_for, vouch_profile
 
+from . import abuse, otp
 from .auth import hash_otp, hash_token, issue_token
-from .models import AuthToken, OTPChallenge, PushSubscription, User, Vehicle
+from .models import AuthToken, OTPAbuseFlag, OTPChallenge, PushSubscription, User, Vehicle
+
+log = logging.getLogger(__name__)
 
 
 def normalise_phone(raw):
@@ -100,43 +105,102 @@ class VehicleSerializer(serializers.ModelSerializer):
         return value
 
 
+def _too_many(detail, code, retry_after=None, **extra):
+    body = {"detail": detail, "code": code, **extra}
+    if retry_after is not None:
+        body["retry_after"] = max(1, int(retry_after))
+    return Response(body, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
+def _blocked_response(kind, until):
+    who = "this number" if kind == OTPAbuseFlag.Kind.PHONE else "your network"
+    return _too_many(
+        f"Too many code requests from {who}. You can try again after {ist(until)}.",
+        "otp_blocked", retry_after=(until - timezone.now()).total_seconds(), blocked_until=until.isoformat(),
+    )
+
+
+def _limit_hit(kind, value, reason, detail, code="rate_limited"):
+    """Record the hit (may start a block), then refuse. The hit is committed before responding."""
+    flag = abuse.record_hit(kind, value, reason, timezone.now())
+    if flag.blocked_until and flag.blocked_until > timezone.now():
+        return _blocked_response(kind, flag.blocked_until)
+    return _too_many(detail, code)
+
+
 class OTPRequestView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
         phone = normalise_phone(request.data.get("phone"))
-        window = settings.OTP_SEND_WINDOW_SECONDS
-        if not _rate_limit(f"otp:phone:{phone}", settings.OTP_SENDS_PER_PHONE, window) or not _rate_limit(
-            f"otp:ip:{client_ip(request)}", settings.OTP_SENDS_PER_IP, window
-        ):
-            return Response(
-                {"detail": "Too many codes requested. Please wait 15 minutes and try again.", "code": "rate_limited"},
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
+        prefer = "sms" if request.data.get("channel") == "sms" else None
+        ip = client_ip(request)
+        now = timezone.now()
+        phone_key, ip_key = abuse.subject_key(phone), abuse.subject_key(ip)
+        Kind = OTPAbuseFlag.Kind
+
+        for kind, value in ((Kind.PHONE, phone), (Kind.IP, ip)):
+            until = abuse.active_block(kind, value, now)
+            if until:
+                return _blocked_response(kind, until)
+
+        window, day = settings.OTP_SEND_WINDOW_SECONDS, 24 * 3600
+        wait = "Too many codes requested. Please wait 15 minutes and try again."
+        if not _rate_limit(f"otp:phone:{phone_key}", settings.OTP_SENDS_PER_PHONE, window):
+            return _limit_hit(Kind.PHONE, phone, "phone_burst", wait)
+        if not _rate_limit(f"otp:phone:day:{phone_key}", settings.OTP_SENDS_PER_PHONE_DAY, day):
+            return _limit_hit(Kind.PHONE, phone, "phone_daily",
+                              "Too many codes requested today. Please try again tomorrow.")
+        if not _rate_limit(f"otp:ip:{ip_key}", settings.OTP_SENDS_PER_IP, window):
+            return _limit_hit(Kind.IP, ip, "ip_burst", wait)
+        if not _rate_limit(f"otp:ip:day:{ip_key}", settings.OTP_SENDS_PER_IP_DAY, day):
+            return _limit_hit(Kind.IP, ip, "ip_daily", "Too many codes requested from your network today.")
+        # One device asking codes for many different numbers looks like SMS pumping or enumeration.
+        if cache.add(f"otp:ipnum:{ip_key}:{phone_key}", 1, day):
+            cache.add(f"otp:ipnums:{ip_key}", 0, day)
+            if cache.incr(f"otp:ipnums:{ip_key}") > settings.OTP_NUMBERS_PER_IP_DAY:
+                return _limit_hit(Kind.IP, ip, "ip_many_numbers",
+                                  "Too many different numbers from your network today. Please try again tomorrow.")
+
+        # Escalating wait between codes for the same number: 60 s, then 2 min, then 5 min.
+        sent_key = f"otp:sent:hour:{phone_key}"
+        steps = settings.OTP_RESEND_COOLDOWN_STEPS
+        cooldown = steps[min(cache.get(sent_key, 0), len(steps) - 1)]
         cooldown_key = f"otp:cooldown:{phone}"
-        if not cache.add(cooldown_key, 1, settings.OTP_RESEND_COOLDOWN_SECONDS):
-            return Response(
-                {"detail": "Please wait 60 seconds before requesting another code.", "code": "otp_cooldown",
-                 "retry_after": settings.OTP_RESEND_COOLDOWN_SECONDS},
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
+        if not cache.add(cooldown_key, now.timestamp() + cooldown, cooldown):
+            ends = cache.get(cooldown_key) or now.timestamp()
+            retry = max(1, int(ends - now.timestamp()))
+            abuse.record_hit(Kind.PHONE, phone, "cooldown_ignored", now)
+            return _too_many(f"Please wait {retry} seconds before requesting another code.", "otp_cooldown",
+                             retry_after=retry)
+
+        # Spend cap across everyone, so a bot army cannot run up the SMS bill.
+        if not _rate_limit("otp:global:hour", settings.OTP_GLOBAL_SENDS_PER_HOUR, 3600):
+            cache.delete(cooldown_key)
+            log.error("OTP global hourly send cap reached; refusing new codes.")
+            raise ServiceUnavailable("We're getting a lot of sign-ins right now. Please try again in a few minutes.",
+                                     "otp_busy")
+
         code = f"{secrets.randbelow(1_000_000):06d}"
         try:
-            with transaction.atomic():
-                challenge = OTPChallenge.objects.create(
-                    phone=phone, code_hash=hash_otp(phone, code),
-                    expires_at=timezone.now() + timedelta(seconds=settings.OTP_TTL_SECONDS),
-                )
-                sms_backend().send_otp(phone, code)
-                OTPChallenge.objects.filter(phone=phone, consumed_at__isnull=True).exclude(pk=challenge.pk).update(
-                    consumed_at=timezone.now()
-                )
+            delivery = otp.deliver(phone, code, prefer)
         except SMSDeliveryError:
             cache.delete(cooldown_key)
             raise ServiceUnavailable("We couldn't send a code right now. Please try again.", "sms_unavailable") from None
-        body = {"phone": phone, "expires_in": settings.OTP_TTL_SECONDS,
-                "resend_after": settings.OTP_RESEND_COOLDOWN_SECONDS}
-        if settings.OTP_DEBUG_ECHO:
+        with transaction.atomic():
+            challenge = OTPChallenge.objects.create(
+                phone=phone, code_hash="" if delivery.verifies_code else hash_otp(phone, code),
+                channel=delivery.channel, backend=delivery.backend, provider_ref=delivery.reference,
+                expires_at=now + timedelta(seconds=settings.OTP_TTL_SECONDS),
+            )
+            OTPChallenge.objects.filter(phone=phone, consumed_at__isnull=True).exclude(pk=challenge.pk).update(
+                consumed_at=now
+            )
+        cache.add(sent_key, 0, 3600)
+        cache.incr(sent_key)
+        body = {"phone": phone, "expires_in": settings.OTP_TTL_SECONDS, "resend_after": cooldown,
+                "channel": delivery.channel, "sms_available": otp.sms_available()}
+        if settings.OTP_DEBUG_ECHO and not delivery.verifies_code:
             body["debug_code"] = code
         return Response(body)
 
@@ -145,13 +209,15 @@ class OTPVerifyView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        if not _rate_limit(f"otp:verify:ip:{client_ip(request)}", settings.OTP_VERIFY_ATTEMPTS_PER_IP,
+        ip = client_ip(request)
+        if not _rate_limit(f"otp:verify:ip:{abuse.subject_key(ip)}", settings.OTP_VERIFY_ATTEMPTS_PER_IP,
                            settings.OTP_VERIFY_WINDOW_SECONDS):
-            return Response({"detail": "Too many verification attempts. Please try again later.",
-                             "code": "rate_limited"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            return _limit_hit(OTPAbuseFlag.Kind.IP, ip, "verify_burst",
+                              "Too many verification attempts. Please try again later.")
         phone = normalise_phone(request.data.get("phone"))
         code = str(request.data.get("code", "")).strip()
         error = None
+        locked_now = False
         # Errors are raised after the transaction commits, so a wrong attempt is always counted.
         with transaction.atomic():
             challenge = (
@@ -165,10 +231,27 @@ class OTPVerifyView(APIView):
                 error = DomainError("Too many wrong tries. Ask for a new code.", "otp_locked")
             else:
                 challenge.attempts += 1
-                if hmac.compare_digest(challenge.code_hash, hash_otp(phone, code)):
-                    challenge.consumed_at = timezone.now()
+                if not re.fullmatch(r"\d{4,8}", code):
+                    result = "wrong"
+                elif challenge.code_hash:
+                    result = "ok" if hmac.compare_digest(challenge.code_hash, hash_otp(phone, code)) else "wrong"
                 else:
-                    error = DomainError("That code doesn't match. Check the SMS and try again.", "otp_wrong")
+                    try:
+                        result = otp.provider_check(challenge.backend, challenge.provider_ref, code)
+                    except SMSDeliveryError:
+                        result = "unavailable"
+                if result == "ok":
+                    challenge.consumed_at = timezone.now()
+                elif result == "expired":
+                    challenge.consumed_at = timezone.now()
+                    error = DomainError("That code has expired. Ask for a new one.", "otp_expired")
+                elif result == "unavailable":
+                    challenge.attempts -= 1  # the provider failed, not the user
+                    error = ServiceUnavailable("We couldn't check the code right now. Please try again.",
+                                               "otp_check_unavailable")
+                else:
+                    error = DomainError("That code doesn't match. Check the message and try again.", "otp_wrong")
+                    locked_now = challenge.attempts >= settings.OTP_MAX_ATTEMPTS
                 challenge.save(update_fields=["attempts", "consumed_at"])
             if error is None:
                 user = User.objects.filter(phone=phone).first()
@@ -179,6 +262,8 @@ class OTPVerifyView(APIView):
                     if created:
                         user.set_unusable_password()
                         user.save()
+        if locked_now:
+            abuse.record_hit(OTPAbuseFlag.Kind.PHONE, phone, "wrong_codes", timezone.now())
         if error:
             raise error
         if not user.is_active:

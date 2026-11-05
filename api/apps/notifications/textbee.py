@@ -12,6 +12,9 @@ TEXTBEE_TIMEOUT_SECONDS = 8
 
 
 class TextBeeSMSBackend:
+    channel = "sms"
+    verifies_code = False
+
     def send_otp(self, phone, code):
         if not settings.TEXTBEE_API_KEY or not settings.TEXTBEE_DEVICE_ID:
             raise SMSDeliveryError("TextBee credentials are incomplete.")

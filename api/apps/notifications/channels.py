@@ -1,7 +1,7 @@
 """Delivery channels. In-app is the row itself; email and Web Push are best effort on top.
 
-SMS is used only for OTP, through a DLT-registered provider. The provider is not
-chosen yet, so production must set SMS_BACKEND to a real implementation.
+OTP senders (WhatsApp, VerifyNow SMS, TextBee, console) are tried in order by
+apps.accounts.otp; see OTP_BACKENDS in settings.
 """
 import json
 import logging
@@ -9,7 +9,6 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.core.mail import send_mail
-from django.utils.module_loading import import_string
 
 log = logging.getLogger(__name__)
 
@@ -29,11 +28,17 @@ def valid_push_endpoint(endpoint):
 
 
 class SMSDeliveryError(Exception):
-    """The SMS gateway did not accept an OTP for sending."""
+    """An OTP provider did not accept a code for sending, or could not check one."""
+
+
+OTPDeliveryError = SMSDeliveryError
 
 
 class ConsoleSMSBackend:
     """Development only: prints the SMS instead of sending it."""
+
+    channel = "sms"
+    verifies_code = False
 
     def send_otp(self, phone, code):
         if not settings.DEBUG:
@@ -42,12 +47,11 @@ class ConsoleSMSBackend:
 
 
 class UnconfiguredSMSBackend:
+    channel = "sms"
+    verifies_code = False
+
     def send_otp(self, phone, code):
         raise SMSDeliveryError("No SMS provider is configured.")
-
-
-def sms_backend():
-    return import_string(settings.SMS_BACKEND)()
 
 
 def send_email(notification):

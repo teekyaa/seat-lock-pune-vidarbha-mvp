@@ -9,7 +9,8 @@ Full PRD: `docs/PRD.md` (exported from the Claude Doc; not in the repo yet). `PR
 The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). The old Node/SQLite demo lives in `prototype/` for reference only. Build plan and the decisions taken to unblock it: `docs/PRODUCTION_PLAN.md`.
 
 - Built so far:
-  - Phone OTP sign-in (hashed codes, 5 min expiry, 5 tries, per-phone and per-IP send limits), bearer tokens kept in an httpOnly cookie by the web app, profiles, saved cars, UPI ID.
+  - Phone OTP sign-in (hashed codes, 5 min expiry, 5 tries), bearer tokens kept in an httpOnly cookie by the web app, profiles, saved cars, UPI ID.
+  - OTP delivery: WhatsApp Cloud API authentication template first, Message Central VerifyNow SMS as fallback (it generates and checks its own code), TextBee for development; "Send by SMS instead" on the login screen. Abuse limits: escalating resend wait (60 s, 2 min, 5 min), 15 minute and daily caps per number and per IP, a distinct-numbers-per-IP cap, a global hourly spend cap, and `OTPAbuseFlag` rows that block a number (24 h, doubling) or IP (1 h) after 5 limit hits, reviewed in Django admin.
   - Route network (Phase 1 of `docs/ROUTE_NETWORK_SPEC.md`): places, verified legs and named via-routes in `api/apps/routes`; posting picks From/To, a via route and its stops, an exact pickup point (Mappls search, plain-text fallback), and is priced per leg with the 15% cap. Rides store the stops, distance and tolls they were priced on. Legacy `city_pairs` rides still work. Search matches a ride's own start and end only; stops along the way come in Phase 2.
   - Optional advance: a percentage of the fare with no floor or ceiling, and drivers can switch it off. No-advance seats confirm when the driver accepts and never create payment or refund records.
   - Server-rendered ride pages with per-ride OG images and WhatsApp share.
@@ -24,7 +25,7 @@ The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). Th
 - In progress: nothing.
 - Known issues / not done:
   - Tests have only run on SQLite so far. Run them against PostgreSQL before relying on the row-locking guarantees.
-  - TextBee SMS gateway integrated for OTP when its server-side credentials are configured. Real handset delivery and telecom requirements still need validation.
+  - WhatsApp and VerifyNow senders are built and tested against mocked APIs only. They need a Meta Business account, an approved template and a VerifyNow account before real use. WhatsApp delivery failures arrive by webhook, which is not built, so a number not on WhatsApp relies on the user tapping "Send by SMS instead".
   - City pair distances, tolls and fuel cost are placeholders (`seed_reference_data`).
   - Photos are a URL field; no object storage. The ID verification provider is not built. Emergency trip links need a public deployment before they can be shared across devices. Vouches are social context only and do not verify identity or safety.
   - Co-driver licence claims are self-attested, not verified. Same fare and cancellation treatment is a prototype default; decide public licensing checks, duties, insurance and any discount before launch.
@@ -87,7 +88,7 @@ Exits: `declined` / `expired` (from requested), hold expiry (from accepted, afte
 - API: Django + Django REST Framework on Railway. Django admin is the ops console for disputes, reports and admin verification.
 - Jobs: Celery worker + Celery beat, Redis broker.
 - Data: PostgreSQL 16, Redis (OTP rate limits, cache, queue).
-- SMS: Indian provider with DLT-registered OTP templates. Email + Web Push (VAPID) for everything else.
+- OTP: WhatsApp Cloud API (authentication template), SMS fallback through Message Central VerifyNow. Email + Web Push (VAPID) for everything else.
 
 Where things live:
 - `api/apps/core/policy.py`: pure fare, advance and cancellation arithmetic. `api/apps/bookings/services.py`: every booking, payment and waitlist write. `api/apps/bookings/sweeps.py`: time-driven state changes. `api/apps/notifications/`: rows, schedule, dispatcher. `api/apps/bookings/presenters.py`: JSON shapes and contact gating.
@@ -127,6 +128,6 @@ Implementation decisions to keep:
 - Source and upkeep of fuel cost and toll figures
 - Whether Maharashtra carpool rules require a licence for a platform that takes no money
 - Co-driver fare discount: fixed or per ride?
-- TextBee production rollout: confirm handset delivery, sender/telecom requirements, and monitoring
+- OTP rollout: Meta Business verification and template approval, VerifyNow account and real-handset tests, and whether to register our own DLT sender ID later
 - Sign-off on the decisions listed in `docs/PRODUCTION_PLAN.md`
 - Route network: which via-routes to launch with, measured leg distances and confirmed tolls, Mappls account and key (see `docs/ROUTE_NETWORK_SPEC.md`)

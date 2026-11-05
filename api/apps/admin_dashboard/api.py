@@ -238,7 +238,7 @@ class AdminOverviewView(AdminAPIView):
 
     @extend_schema(responses={200: AdminOverviewSerializer, 401: AdminErrorSerializer, 403: AdminErrorSerializer})
     def get(self, request):
-        from apps.accounts.models import User
+        from apps.accounts.models import OTPAbuseFlag, User
         from apps.bookings.models import Booking
         from apps.rides.models import Ride
         from apps.trust.models import Report
@@ -257,6 +257,8 @@ class AdminOverviewView(AdminAPIView):
                                                   ride__status=Ride.Status.OPEN, ride__departure_at__gte=now).count(),
             "open_reports": Report.objects.filter(status=Report.Status.OPEN).count(),
             "new_signups_today": User.objects.filter(date_joined__gte=start, date_joined__lt=end).count(),
+            "otp_blocks_active": OTPAbuseFlag.objects.filter(blocked_until__gt=now).count(),
+            "otp_flags_today": OTPAbuseFlag.objects.filter(last_seen__gte=start, last_seen__lt=end).count(),
         })
 
 

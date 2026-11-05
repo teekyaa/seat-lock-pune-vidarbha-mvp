@@ -177,25 +177,45 @@ OTP_VERIFY_WINDOW_SECONDS = 900
 OTP_SENDS_PER_PHONE = 3  # per OTP_SEND_WINDOW_SECONDS
 OTP_SENDS_PER_IP = 10
 OTP_SEND_WINDOW_SECONDS = 900
-OTP_RESEND_COOLDOWN_SECONDS = 60
+OTP_SENDS_PER_PHONE_DAY = 10
+OTP_SENDS_PER_IP_DAY = 60  # mobile carriers put many people behind one IP, so keep this generous
+OTP_NUMBERS_PER_IP_DAY = 15  # distinct phone numbers from one IP in a day
+OTP_RESEND_COOLDOWN_STEPS = (60, 120, 300)  # wait after the 1st, 2nd and later codes within an hour
+OTP_RESEND_COOLDOWN_SECONDS = OTP_RESEND_COOLDOWN_STEPS[0]
+OTP_GLOBAL_SENDS_PER_HOUR = int(env("OTP_GLOBAL_SENDS_PER_HOUR", "300"))  # spend cap across all users
+# Abuse flags: limit hits inside the window add up; reaching the threshold blocks code requests.
+OTP_FLAG_WINDOW_HOURS = 24
+OTP_BLOCK_AFTER_HITS = 5
+OTP_BLOCK_HOURS_PHONE = 24  # doubles for each repeat block, capped at 7 days
+OTP_BLOCK_HOURS_IP = 1  # short, since one carrier IP can be shared by many genuine users
 # Only trust forwarding headers from explicitly configured reverse proxies.
 OTP_TRUSTED_PROXY_IPS = env_list("OTP_TRUSTED_PROXY_IPS")
 
-# Messaging
+# Messaging: OTP senders, tried in order. WhatsApp first, SMS as the fallback.
+WHATSAPP_ACCESS_TOKEN = env("WHATSAPP_ACCESS_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = env("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_OTP_TEMPLATE = env("WHATSAPP_OTP_TEMPLATE", "seatlock_login_code")
+WHATSAPP_OTP_LANGUAGE = env("WHATSAPP_OTP_LANGUAGE", "en")
+WHATSAPP_GRAPH_VERSION = env("WHATSAPP_GRAPH_VERSION", "v27.0")
+VERIFYNOW_CUSTOMER_ID = env("VERIFYNOW_CUSTOMER_ID", "")
+VERIFYNOW_AUTH_KEY = env("VERIFYNOW_AUTH_KEY", "")  # the Base64 key from the Message Central console
 TEXTBEE_API_KEY = env("TEXTBEE_API_KEY", "")
 TEXTBEE_DEVICE_ID = env("TEXTBEE_DEVICE_ID", "")
-SMS_BACKEND = env("SMS_BACKEND") or (
-    "apps.notifications.textbee.TextBeeSMSBackend"
-    if TEXTBEE_API_KEY or TEXTBEE_DEVICE_ID
-    else "apps.notifications.channels.ConsoleSMSBackend" if DEBUG
-    else "apps.notifications.channels.UnconfiguredSMSBackend"
-)
-# Never return a code when a real SMS gateway is configured, even in DEBUG.
-OTP_DEBUG_ECHO = (
-    DEBUG and env_bool("OTP_DEBUG_ECHO", False)
-    and SMS_BACKEND == "apps.notifications.channels.ConsoleSMSBackend"
-    and not (TEXTBEE_API_KEY or TEXTBEE_DEVICE_ID)
-)
+_CONSOLE_SMS = "apps.notifications.channels.ConsoleSMSBackend"
+if env("OTP_BACKENDS"):
+    OTP_BACKENDS = env_list("OTP_BACKENDS")
+elif env("SMS_BACKEND"):  # older single-sender setting, still honoured
+    OTP_BACKENDS = [env("SMS_BACKEND")]
+else:
+    OTP_BACKENDS = [path for path, configured in (
+        ("apps.notifications.whatsapp.WhatsAppOTPBackend", WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID),
+        ("apps.notifications.verifynow.VerifyNowSMSBackend", VERIFYNOW_CUSTOMER_ID or VERIFYNOW_AUTH_KEY),
+        ("apps.notifications.textbee.TextBeeSMSBackend", TEXTBEE_API_KEY or TEXTBEE_DEVICE_ID),
+    ) if configured] or [_CONSOLE_SMS if DEBUG else "apps.notifications.channels.UnconfiguredSMSBackend"]
+if not DEBUG and _CONSOLE_SMS in OTP_BACKENDS:
+    raise RuntimeError("The console OTP sender is for development only.")
+# Never return a code when a real sender is configured, even in DEBUG.
+OTP_DEBUG_ECHO = DEBUG and env_bool("OTP_DEBUG_ECHO", False) and OTP_BACKENDS == [_CONSOLE_SMS]
 EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 EMAIL_HOST = env("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(env("EMAIL_PORT", "587"))

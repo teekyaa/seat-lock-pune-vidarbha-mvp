@@ -52,3 +52,40 @@ test("login reports a network failure instead of remaining busy", async ({ page 
   await page.getByLabel(/Enter the code sent/).fill("123456");
   await expect(page.getByText("Could not connect. Please try again.")).toBeVisible();
 });
+
+test("login says WhatsApp and offers SMS instead", async ({ page }) => {
+  const bodies: unknown[] = [];
+  await page.route("**/api/proxy/auth/otp/request", async (route) => {
+    const body = route.request().postDataJSON();
+    bodies.push(body);
+    if (bodies.length === 1) {
+      return route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify({ phone: "+919000000001", resend_after: 0, channel: "whatsapp", sms_available: true }) });
+    }
+    return route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ phone: "+919000000001", resend_after: 120, channel: "sms", sms_available: true }) });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/login");
+  await page.getByLabel("Your mobile number").fill("9000000001");
+  await page.getByRole("button", { name: "Send code" }).click();
+  await expect(page.getByLabel(/on WhatsApp/)).toBeVisible();
+  await page.getByRole("button", { name: "Not on WhatsApp? Send by SMS" }).click();
+  await expect(page.getByLabel(/by SMS/)).toBeVisible();
+  expect(bodies[1]).toEqual({ phone: "9000000001", channel: "sms" });
+  await expect(page.getByRole("button", { name: /Resend in 1m/ })).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+});
+
+test("login shows the exact time a block ends", async ({ page }) => {
+  await page.route("**/api/proxy/auth/otp/request", (route) => route.fulfill({
+    status: 429, contentType: "application/json",
+    body: JSON.stringify({ code: "otp_blocked", retry_after: 86400,
+      detail: "Too many code requests from this number. You can try again after Sat 7 Nov, 10:00 am IST." }),
+  }));
+  await page.goto("/login");
+  await page.getByLabel("Your mobile number").fill("9000000001");
+  await page.getByRole("button", { name: "Send code" }).click();
+  await expect(page.getByText(/try again after Sat 7 Nov, 10:00 am IST/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send code" })).toBeEnabled();
+});

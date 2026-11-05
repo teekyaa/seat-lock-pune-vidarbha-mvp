@@ -616,11 +616,19 @@ components:
         new_signups_today:
           type: integer
           minimum: 0
+        otp_blocks_active:
+          type: integer
+          minimum: 0
+        otp_flags_today:
+          type: integer
+          minimum: 0
       required:
       - as_of
       - held_seats
       - new_signups_today
       - open_reports
+      - otp_blocks_active
+      - otp_flags_today
       - rides_next_24_hours
       - rides_scheduled_today
     AdminReauthentication:

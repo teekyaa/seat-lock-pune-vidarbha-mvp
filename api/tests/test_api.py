@@ -110,7 +110,8 @@ def test_otp_send_failure_preserves_previous_code(otp, policy, monkeypatch):
         raise SMSDeliveryError("provider details must stay private")
 
     from types import SimpleNamespace
-    monkeypatch.setattr("apps.accounts.api.sms_backend", lambda: SimpleNamespace(send_otp=unavailable))
+    monkeypatch.setattr("apps.accounts.otp.configured_backends",
+                        lambda: [("tests.fake.SMS", SimpleNamespace(channel="sms", send_otp=unavailable))])
     failed = c.post("/api/v1/auth/otp/request", {"phone": "9876543210"}, format="json")
     assert failed.status_code == 503 and failed.data["code"] == "sms_unavailable"
     assert "provider details" not in str(failed.data)

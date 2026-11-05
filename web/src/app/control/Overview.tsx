@@ -37,6 +37,8 @@ export function Overview({ initial }: { initial: AdminOverview }) {
     { label: "Reserved seats", value: data.held_seats, note: "Includes confirmed seats on upcoming rides" },
     { label: "Open reports", value: data.open_reports, note: "Existing reports; ticket queues are not yet available" },
     { label: "New signups today", value: data.new_signups_today },
+    { label: "Sign-in blocks now", value: data.otp_blocks_active, note: "Numbers or networks blocked for too many code requests" },
+    { label: "Sign-in flags today", value: data.otp_flags_today, note: "Review them under OTP abuse flags in Django admin" },
   ];
   return (
     <div className="py-8">
