@@ -4,8 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { RouteMark } from "@/components/RouteMark";
 import { TopBar } from "@/components/TopBar";
-import { call } from "@/lib/client";
 import { safeRedirect } from "@/lib/safe-redirect";
+
+function formatWait(seconds: number) {
+  return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
+}
 
 function LoginForm() {
   const router = useRouter();
@@ -17,6 +20,8 @@ function LoginForm() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [wait, setWait] = useState(0);
+  const [channel, setChannel] = useState<"whatsapp" | "sms">("sms");
+  const [smsAvailable, setSmsAvailable] = useState(false);
   const verifying = useRef(false);
 
   useEffect(() => {
@@ -25,18 +30,30 @@ function LoginForm() {
     return () => clearTimeout(t);
   }, [wait]);
 
-  async function requestCode(e?: React.FormEvent) {
+  async function requestCode(e?: React.FormEvent, via?: "sms") {
     e?.preventDefault();
     setBusy(true);
     setError("");
     try {
-      const r = await call<{ phone: string; debug_code?: string; resend_after: number }>("/auth/otp/request", "POST", { phone });
+      const res = await fetch("/api/proxy/auth/otp/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(via ? { phone, channel: via } : { phone }),
+      });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // The server says how long to wait, including the exact end of any block.
+        if (typeof r.retry_after === "number" && sentTo) setWait(Math.min(r.retry_after, 3600));
+        return setError(r.detail ?? "We couldn't send a code. Please try again.");
+      }
       setSentTo(r.phone);
+      setChannel(r.channel === "whatsapp" ? "whatsapp" : "sms");
+      setSmsAvailable(Boolean(r.sms_available));
       setDevCode(r.debug_code ?? null);
       setCode("");
       setWait(r.resend_after);
-    } catch (err) {
-      setError((err as Error).message);
+    } catch {
+      setError("Could not connect. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -90,14 +107,16 @@ function LoginForm() {
               <input id="phone" className="field min-h-14 text-lg font-bold tracking-wide" type="tel" inputMode="numeric" autoComplete="tel-national"
                 placeholder="98765 43210" value={phone} maxLength={14} onChange={(e) => setPhone(e.target.value)} autoFocus required />
             </div>
-            <p className="hint">We send a 6 digit code by SMS. Your number stays private until a seat is confirmed.</p>
+            <p className="hint">We send a 6 digit code on WhatsApp, or by SMS. Your number stays private until a seat is confirmed.</p>
           </div>
           <button className="btn-primary w-full" disabled={busy || digits.length < 10}>{busy ? "Sending code" : "Send code"}</button>
         </form>
       ) : (
         <div className="space-y-4">
           <div>
-            <label className="label" htmlFor="code">Enter the code sent to {sentTo}</label>
+            <label className="label" htmlFor="code">
+              Enter the code sent to {sentTo} {channel === "whatsapp" ? "on WhatsApp" : "by SMS"}
+            </label>
             <input id="code" className="field min-h-14 text-center text-2xl font-extrabold tracking-[0.5em]" inputMode="numeric"
               autoComplete="one-time-code" maxLength={6} value={code} autoFocus disabled={busy}
               onChange={(e) => {
@@ -113,9 +132,14 @@ function LoginForm() {
           <div className="flex justify-between text-sm font-semibold">
             <button className="min-h-11 text-brand" onClick={() => { setSentTo(null); setCode(""); setError(""); }}>Change number</button>
             <button className="min-h-11 text-brand disabled:text-muted" disabled={wait > 0 || busy} onClick={() => requestCode()}>
-              {wait > 0 ? `Resend in ${wait}s` : "Resend code"}
+              {wait > 0 ? `Resend in ${formatWait(wait)}` : "Resend code"}
             </button>
           </div>
+          {channel === "whatsapp" && smsAvailable && (
+            <button className="btn-secondary w-full" disabled={wait > 0 || busy} onClick={() => requestCode(undefined, "sms")}>
+              {wait > 0 ? `Not on WhatsApp? Send by SMS in ${formatWait(wait)}` : "Not on WhatsApp? Send by SMS"}
+            </button>
+          )}
         </div>
       )}
       {error && <p className="mt-4 rounded-xl bg-danger-wash p-3 text-sm text-danger" role="alert">{error}</p>}

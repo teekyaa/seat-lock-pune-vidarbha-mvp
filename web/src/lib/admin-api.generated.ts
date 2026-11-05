@@ -249,6 +249,8 @@ export interface components {
             held_seats: number;
             open_reports: number;
             new_signups_today: number;
+            otp_blocks_active: number;
+            otp_flags_today: number;
         };
         AdminReauthentication: {
             password: string;

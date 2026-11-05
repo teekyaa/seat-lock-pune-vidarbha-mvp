@@ -20,6 +20,14 @@ An ops admin or super admin may pause `signup.new_signups_enabled`; existing use
 
 Do not use this document as proof of compliance or as a substitute for a tested incident response plan.
 
+## Sign-in abuse flags
+
+Django admin, **Accounts > OTP abuse flags**, lists phone numbers and IP addresses that kept hitting sign-in code limits; the dashboard overview shows how many are blocked now and flagged today. A number is blocked from requesting codes for 24 hours after five limit hits, doubling for each repeat up to 7 days. An IP is blocked for 1 hour, since mobile carriers share one address across many people. Blocks lift on their own at the time shown.
+
+- A genuine user locked out: check the reason and history, then use **Unblock now and mark reviewed**.
+- Clear abuse (many numbers from one IP, repeated wrong codes): use **Block code requests for 7 days** and add a note. To stop an existing account signing in, suspend the user instead.
+- Many IP flags at once or the global hourly cap being hit (`otp_busy` in logs) can mean an SMS pumping attack: lower `OTP_GLOBAL_SENDS_PER_HOUR`, enable Cloudflare rate limiting on `/api/proxy/auth/otp/request`, and check the provider bill.
+
 ## Managing route legs before the dashboard covers them
 
 Route legs are measured and verified in the legacy Django admin. In production set `DJANGO_LEGACY_ADMIN_ENABLED=1` together with `ADMIN_IP_ALLOWLIST` (the app will not start with one and not the other), do the leg work at `/admin/routes/`, then turn it off again.

@@ -95,6 +95,8 @@ class AdminOverviewSerializer(serializers.Serializer):
     held_seats = serializers.IntegerField(min_value=0)
     open_reports = serializers.IntegerField(min_value=0)
     new_signups_today = serializers.IntegerField(min_value=0)
+    otp_blocks_active = serializers.IntegerField(min_value=0)
+    otp_flags_today = serializers.IntegerField(min_value=0)
 
 
 class AdminErrorDetailSerializer(serializers.Serializer):

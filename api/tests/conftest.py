@@ -36,7 +36,8 @@ def _isolate_settings(settings, monkeypatch):
     settings.TEXTBEE_API_KEY = ""
     settings.TEXTBEE_DEVICE_ID = ""
     settings.OTP_TRUSTED_PROXY_IPS = []
-    monkeypatch.setattr("apps.accounts.api.sms_backend", lambda: SimpleNamespace(send_otp=lambda phone, code: None))
+    fake_sms = SimpleNamespace(channel="sms", verifies_code=False, send_otp=lambda phone, code: None)
+    monkeypatch.setattr("apps.accounts.otp.configured_backends", lambda: [("tests.fake.SMS", fake_sms)])
 
 
 @pytest.fixture
