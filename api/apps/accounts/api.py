@@ -223,7 +223,7 @@ class OTPVerifyView(APIView):
             challenge = (
                 OTPChallenge.objects.select_for_update()
                 .filter(phone=phone, consumed_at__isnull=True)
-                .order_by("-created_at").first()
+                .order_by("-created_at", "-pk").first()
             )
             if not challenge or challenge.expires_at <= timezone.now():
                 error = DomainError("That code has expired. Ask for a new one.", "otp_expired")

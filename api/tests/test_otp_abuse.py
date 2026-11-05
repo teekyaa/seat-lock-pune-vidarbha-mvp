@@ -193,7 +193,7 @@ def test_response_says_which_channel_was_used(policy, monkeypatch):
     skip_wait()
     r = ask(c, channel="sms")
     assert r.data["channel"] == "sms"
-    assert list(OTPChallenge.objects.order_by("created_at").values_list("channel", flat=True)) == ["whatsapp", "sms"]
+    assert list(OTPChallenge.objects.order_by("pk").values_list("channel", flat=True)) == ["whatsapp", "sms"]
 
 
 def test_whatsapp_outage_falls_back_to_sms(policy, monkeypatch):
