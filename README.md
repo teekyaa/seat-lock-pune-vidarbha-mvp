@@ -107,6 +107,7 @@ The PRD does not decide licence evidence, driving-duty and insurance terms, whet
 
 ## Not ready for real users yet
 
+- **Deployment files are ready, not deployed.** `deploy/README.md` walks through the Oracle VM, Cloudflare, first start, backups and monitoring. Kafka carries domain events after commit (`docs/EVENTS_KAFKA.md`); bookings never depend on it.
 - **OTP delivery needs real accounts.** WhatsApp (Meta Cloud API) is the first sender and Message Central VerifyNow SMS the fallback; both are tested against mocked APIs only. TextBee remains for development. Set the variables in `api/.env.example`, then test on real handsets.
 - **OTP abuse limits.** Repeated code requests get longer waits, then 15 minute and daily caps per number and per network. Five limit hits block a number for 24 hours (doubling on repeat) or a network for 1 hour. Review and unblock under OTP abuse flags in Django admin; the dashboard overview shows counts.
 - **Corridor figures are placeholders.** Distances, tolls and fuel cost per km in `seed_reference_data` must be replaced with approved values.

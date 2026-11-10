@@ -15,13 +15,15 @@ The production stack is built (`api/` Django + DRF + Celery, `web/` Next.js). Th
   - Optional advance: a percentage of the fare with no floor or ceiling, and drivers can switch it off. No-advance seats confirm when the driver accepts and never create payment or refund records.
   - Server-rendered ride pages with per-ride OG images and WhatsApp share.
   - Full booking flow with row locking, UPI deep link, cancellation tiers, refill refunds, driver cancel with season strikes, reschedule rule, waitlist offers, reconfirmation, trip confirmation, no-show and dispute, refund received and overdue disputes, report and block, women-only (staff-verified), append-only reliability events with a materialised public record.
-  - Notification rows + per-minute tick (Celery beat in prod, `manage.py run_scheduler` locally) delivering in-app, email and Web Push.
+  - Notification rows + per-minute tick (`manage.py run_scheduler`, one process guarded by a PostgreSQL advisory lock) delivering in-app, email and Web Push. The Celery task still exists but is not deployed.
+  - Domain events (`docs/EVENTS_KAFKA.md`): booking, ride, reliability and OTP-block changes write a transactional outbox row in the same DB transaction (save hooks in `apps/events/signals.py`); `run_outbox_relay` publishes to Kafka (idempotent producer, at-least-once, backoff); `run_event_consumer --consumer metrics` builds `DailyMetric` idempotently via `ProcessedEvent`. Off unless `KAFKA_ENABLED=1`. Events carry no contact details.
+  - Deployment (Option A, `deploy/`): Docker Compose for one Oracle Always Free VM (Caddy behind Cloudflare, web, api, scheduler, relay, consumer, PostgreSQL 16, Redis, single-node KRaft Kafka), nightly encrypted `pg_dump` to R2. Not yet deployed or run under Docker.
   - Passenger-only emergency trip links with hashed tokens, explicit revoke/replace, and expiry 24 hours after expected arrival.
   - Member vouching with a five-active-vouches-given limit, withdrawal, and late-cancellation attribution on voucher profiles.
   - Seat-wanted requests with route/date flexibility and deduplicated in-app/email/Web Push match alerts through the notification dispatcher.
   - Co-driver preference on ride posting, passenger/co-driver request and waitlist roles, licence self-attestation, booking labels, and a separate late-cancellation record. Co-driver verification and fare/legal rules remain open.
   - Django admin ops console: no-show rulings, reports, reliability corrections, women-only verification, policy versions, city pairs, seasons, audit log.
-  - 146 pytest tests in `api/tests` (one, the last-seat race, runs only on PostgreSQL).
+  - 273 pytest tests in `api/tests`; PostgreSQL-only tests (last-seat race, scheduler lock, TOTP replay) and the real-Kafka round trip run in CI.
 - In progress: nothing.
 - Known issues / not done:
   - Tests have only run on SQLite so far. Run them against PostgreSQL before relying on the row-locking guarantees.
@@ -80,14 +82,14 @@ Exits: `declined` / `expired` (from requested), hold expiry (from accepted, afte
 
 ## Data model (summary)
 
-`users`, `vehicles`, `city_pairs` (legacy), `places`, `legs`, `routes` + `route_stops`, `policy_versions`, `seasons`, `rides` (route, From/To places, priced stop snapshot, exact pickup, `advance_required`, co-driver preference), `bookings` (passenger/co-driver role and licence self-attestation timestamp), `payments` (records only), `waitlist_entries` (role preserved), `trip_confirmations`, `reliability_events` (append-only; corrections are new events), `vouches`, `reports`, `blocks`, `seat_wanted`, `notifications`, `audit_log`. The public reliability record is a materialised view over `reliability_events`. Full DDL is in the PRD; the Django models in `api/apps/*/models.py` are the implemented schema.
+`users`, `vehicles`, `city_pairs` (legacy), `places`, `legs`, `routes` + `route_stops`, `policy_versions`, `seasons`, `rides` (route, From/To places, priced stop snapshot, exact pickup, `advance_required`, co-driver preference), `bookings` (passenger/co-driver role and licence self-attestation timestamp), `payments` (records only), `waitlist_entries` (role preserved), `trip_confirmations`, `reliability_events` (append-only; corrections are new events), `vouches`, `reports`, `blocks`, `seat_wanted`, `notifications`, `audit_log`, `events_outboxevent`, `events_processedevent`, `events_dailymetric`. The public reliability record is a materialised view over `reliability_events`. Full DDL is in the PRD; the Django models in `api/apps/*/models.py` are the implemented schema.
 
 ## Stack and architecture
 
-- Web: Next.js (App Router), TypeScript, Tailwind, PWA, on Vercel. Ride pages are server-rendered with per-ride Open Graph images so WhatsApp previews work.
-- API: Django + Django REST Framework on Railway. Django admin is the ops console for disputes, reports and admin verification.
-- Jobs: Celery worker + Celery beat, Redis broker.
-- Data: PostgreSQL 16, Redis (OTP rate limits, cache, queue).
+- Web: Next.js (App Router), TypeScript, Tailwind, PWA, standalone server in Docker on the same VM. Ride pages are server-rendered with per-ride Open Graph images so WhatsApp previews work.
+- API: Django + Django REST Framework, deployed with Docker Compose on one Oracle Always Free VM (`deploy/`). Django admin is the ops console for disputes, reports and admin verification.
+- Jobs: one `run_scheduler` process (advisory lock) for the per-minute tick. Events: transactional outbox, relay to Kafka (KRaft, single node), idempotent consumers.
+- Data: PostgreSQL 16, Redis (OTP rate limits, cache), Kafka (domain event log; never on the booking path).
 - OTP: WhatsApp Cloud API (authentication template), SMS fallback through Message Central VerifyNow. Email + Web Push (VAPID) for everything else.
 
 Where things live:
@@ -100,7 +102,7 @@ Implementation decisions to keep:
 - **Seat counts use row locking.** Confirming an advance or accepting a waitlist offer locks the ride row, counts confirmed bookings, and confirms only if a seat is free, in one transaction.
 - **Holds reserve seats.** `accepted`, `advance_claimed` and open waitlist offers count against capacity so two people never pay for one seat. Only `confirmed` bookings create reliability events. (Deliberate deviation, see `docs/PRODUCTION_PLAN.md`.)
 - **Never raise inside a transaction after saving a state you want kept** (an expiry, a failed OTP attempt). Commit first, then raise. Tests cover both cases.
-- Modular monolith. No microservices.
+- Modular monolith. No microservices. Kafka distributes facts after commit; it never decides seat counts or replaces notification rows.
 
 ## Notification schedule (relative to departure)
 

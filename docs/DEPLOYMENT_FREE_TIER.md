@@ -74,6 +74,8 @@ Trade-offs: Railway's nearest region is Singapore (check it is offered on Hobby)
 
 ## Code and config changes needed (either option)
 
+**Status (10 November 2026):** Option A chosen. Items 1 to 4 and 6 are built in `deploy/`, plus a Kafka event pipeline (`docs/EVENTS_KAFKA.md`, about 1 GB of the VM's RAM). Sentry (item 5) still needs approval. Nothing is provisioned yet.
+
 1. **Drop Celery in production.** Run the scheduler as its own process with `manage.py run_scheduler`. Add a PostgreSQL advisory lock so a second copy exits instead of double-sweeping; sweeps and dispatch already use `SKIP LOCKED`. Update the `Procfile` and docs. Keep the Celery task for later scale-out.
 2. **Option A packaging:** `api/Dockerfile`, `web/Dockerfile` (Next.js `output: "standalone"`), `deploy/docker-compose.prod.yml`, `deploy/Caddyfile`, and an `.env.production.example` with names only, no values.
 3. **Proxy trust:** set `DJANGO_TRUST_PROXY_HEADERS`, `OTP_TRUSTED_PROXY_IPS` and `SEATLOCK_CLIENT_IP_HEADER=CF-Connecting-IP` so OTP rate limits see real client IPs through Cloudflare and Caddy.

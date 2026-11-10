@@ -1,0 +1,13 @@
+.venv
+.env
+.env.*
+!.env.example
+*.sqlite3
+db.sqlite3
+.admin-browser-test.sqlite3
+.loadtest
+staticfiles
+__pycache__
+*.pyc
+.pytest_cache
+loadtest/results

@@ -1,0 +1,152 @@
+# Seat Lock production on one Oracle Always Free Ampere VM (2 OCPU, 12 GB). See deploy/README.md.
+# Only Caddy publishes ports. PostgreSQL, Redis, Kafka, the API and the web server stay on the
+# private network. Memory limits keep the total near 7 GB, leaving room for the OS and page cache.
+name: seatlock
+
+x-api: &api
+  build: ../api
+  image: seatlock-api:latest
+  env_file: .env
+  restart: unless-stopped
+  networks: [internal]
+  depends_on:
+    db: {condition: service_healthy}
+    redis: {condition: service_healthy}
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro  # Cloudflare origin certificate (see README)
+      - caddy-data:/data
+    networks:
+      internal: {ipv4_address: 172.28.0.2}
+    depends_on: [web, api]
+    mem_limit: 128m
+
+  web:
+    build:
+      context: ../web
+      args:
+        NEXT_PUBLIC_SITE_URL: https://${SITE_DOMAIN}
+    image: seatlock-web:latest
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+      # Set by Caddy from Cloudflare's CF-Connecting-IP; only Caddy can reach this container.
+      SEATLOCK_CLIENT_IP_HEADER: X-Seatlock-Client-Ip
+    networks:
+      internal: {ipv4_address: 172.28.0.10}
+    depends_on: [api]
+    mem_limit: 768m
+
+  api:
+    <<: *api
+    mem_limit: 1g
+
+  scheduler:
+    <<: *api
+    # Exactly one tick loop; a second copy exits because it cannot take the advisory lock.
+    command: ["python", "manage.py", "run_scheduler"]
+    healthcheck: {disable: true}
+    mem_limit: 384m
+
+  relay:
+    <<: *api
+    command: ["python", "manage.py", "run_outbox_relay"]
+    healthcheck: {disable: true}
+    depends_on:
+      db: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    mem_limit: 256m
+
+  consumer-metrics:
+    <<: *api
+    command: ["python", "manage.py", "run_event_consumer", "--consumer", "metrics"]
+    healthcheck: {disable: true}
+    depends_on:
+      db: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    mem_limit: 256m
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: seatlock
+      POSTGRES_USER: seatlock
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Sized for a 2 GB budget on a 12 GB box. Revisit after load tests.
+    command: >-
+      postgres -c shared_buffers=512MB -c effective_cache_size=2GB -c work_mem=8MB
+      -c maintenance_work_mem=128MB -c max_connections=60 -c wal_compression=on
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seatlock -d seatlock"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 2g
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Cache and rate-limit counters only (every key has a TTL); blocks and bookings live in PostgreSQL.
+    command: >-
+      redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 256mb
+      --maxmemory-policy volatile-lru --save "" --appendonly no
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    mem_limit: 320m
+
+  kafka:
+    image: apache/kafka:3.9.1
+    restart: unless-stopped
+    environment:
+      # Single node in KRaft mode: broker and controller in one process, no ZooKeeper.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"  # topics come from `manage.py create_event_topics`
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+    volumes: [kafkadata:/var/lib/kafka/data]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+    mem_limit: 1g
+
+networks:
+  internal:
+    ipam:
+      config: [{subnet: 172.28.0.0/24}]
+
+volumes:
+  pgdata:
+  kafkadata:
+  caddy-data:

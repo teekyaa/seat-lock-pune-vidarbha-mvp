@@ -5,6 +5,7 @@ description = "Seat Lock API: Django + DRF + Celery"
 requires-python = ">=3.12"
 dependencies = [
     "celery[redis]>=5.4",
+    "confluent-kafka>=2.6,<3",
     "cryptography>=46,<51",
     "dj-database-url>=2.2",
     "django>=5.2,<5.3",

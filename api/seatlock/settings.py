@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.admin_dashboard",
     "apps.routes",
+    "apps.events",
 ]
 
 MIDDLEWARE = [
@@ -190,6 +191,13 @@ OTP_BLOCK_HOURS_PHONE = 24  # doubles for each repeat block, capped at 7 days
 OTP_BLOCK_HOURS_IP = 1  # short, since one carrier IP can be shared by many genuine users
 # Only trust forwarding headers from explicitly configured reverse proxies.
 OTP_TRUSTED_PROXY_IPS = env_list("OTP_TRUSTED_PROXY_IPS")
+
+# Domain events (docs/EVENTS_KAFKA.md). Off by default so local runs need no broker.
+KAFKA_ENABLED = env_bool("KAFKA_ENABLED", False)
+KAFKA_BOOTSTRAP_SERVERS = env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+KAFKA_CLIENT_ID = env("KAFKA_CLIENT_ID", "seatlock-api")
+EVENTS_OUTBOX_ENABLED = env_bool("EVENTS_OUTBOX_ENABLED", KAFKA_ENABLED)
+EVENTS_OUTBOX_KEEP_DAYS = 7
 
 # Messaging: OTP senders, tried in order. WhatsApp first, SMS as the fallback.
 WHATSAPP_ACCESS_TOKEN = env("WHATSAPP_ACCESS_TOKEN", "")

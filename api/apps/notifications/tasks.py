@@ -13,6 +13,10 @@ def run_tick(now=None):
     result = sweeps.run_all(now)
     result["notifications"] = dispatch_due(now)
     refresh_reliability_view()
+    from django.conf import settings
+
+    from apps.events.relay import prune
+    result["outbox_pruned"] = prune(now, settings.EVENTS_OUTBOX_KEEP_DAYS)
     return result
 
 

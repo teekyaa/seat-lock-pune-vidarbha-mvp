@@ -29,3 +29,7 @@ web/.next-admin-e2e/
 api/.admin-browser-test.sqlite3
 /.admin-postgres-test/
 .DS_Store
+
+# Deployment secrets (VM only)
+deploy/.env
+deploy/certs/
